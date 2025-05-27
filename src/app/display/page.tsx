@@ -692,22 +692,51 @@ export default function DisplayPage() {
                 <div className="flex-1 min-h-0">
                   <div className="bg-white rounded-xl lg:rounded-2xl shadow-xl overflow-hidden border border-gray-100 h-full">
                     <div className="h-full p-4">
-                      <iframe
-                        src={
-                          videoUrl
-                            ? `${videoUrl}${
-                                videoUrl.includes("?") ? "&" : "?"
-                              }autoplay=1&mute=1&loop=1&playlist=${
-                                videoUrl.split("/embed/")[1]?.split("?")[0]
-                              }`
-                            : ""
+                      {(() => {
+                        // Ensure videoUrl is always a valid embed URL or empty string before rendering iframe
+                        const currentEmbedUrl = getYouTubeEmbedUrl(videoUrl) // Re-process for safety
+                        let playlistId = ""
+                        if (
+                          currentEmbedUrl &&
+                          currentEmbedUrl.includes("/embed/")
+                        ) {
+                          playlistId =
+                            currentEmbedUrl
+                              .split("/embed/")[1]
+                              ?.split("?")[0] || ""
                         }
-                        className="w-full h-full rounded-lg"
-                        title="Information Video"
-                        frameBorder="0"
-                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                        allowFullScreen
-                      />
+
+                        if (!currentEmbedUrl || !playlistId) {
+                          // If we don't have a valid embed URL or playlist ID (e.g., from a bad setting or parsing fallback),
+                          // render nothing or a placeholder to avoid iframe errors.
+                          // Using default video ID from getYouTubeEmbedUrl's own fallback if currentEmbedUrl is the default.
+                          const defaultVideoId = "jAQvxW2l-Pg" // Default video ID used in getYouTubeEmbedUrl fallback
+                          const defaultEmbedUrl = `https://www.youtube.com/embed/${defaultVideoId}`
+                          return (
+                            <iframe
+                              src={`${defaultEmbedUrl}?autoplay=1&mute=1&loop=1&playlist=${defaultVideoId}`}
+                              className="w-full h-full rounded-lg"
+                              title="Information Video (Default)"
+                              frameBorder="0"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                          )
+                        }
+
+                        return (
+                          <iframe
+                            src={`${currentEmbedUrl}${
+                              currentEmbedUrl.includes("?") ? "&" : "?"
+                            }autoplay=1&mute=1&loop=1&playlist=${playlistId}`}
+                            className="w-full h-full rounded-lg"
+                            title="Information Video"
+                            frameBorder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                          />
+                        )
+                      })()}
                     </div>
                   </div>
                 </div>
