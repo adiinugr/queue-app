@@ -1,0 +1,674 @@
+"use client"
+
+import { useEffect, useState, useRef, useCallback } from "react"
+import Image from "next/image"
+import LoadingSpinner from "../components/LoadingSpinner"
+import toast, { Toaster } from "react-hot-toast"
+import {
+  useQueueUpdates,
+  useRecallEvents,
+  QueueUpdateData,
+  RecallEventData,
+  useSocketConnection
+} from "../../lib/socket-client"
+
+// Tipe data untuk antrean
+interface Queue {
+  id: string
+  number: number
+  status: "WAITING" | "CALLED" | "SERVING" | "COMPLETED" | "SKIPPED"
+  counterServingId: string | null
+  servedBy: Counter | null
+  updatedAt?: number
+}
+
+// Tipe data untuk meja
+interface Counter {
+  id: string
+  name: string
+  number: number
+  isActive: boolean
+}
+
+export default function DisplayPage() {
+  const [queues, setQueues] = useState<Queue[]>([])
+  const [counters, setCounters] = useState<Counter[]>([])
+  const [loading, setLoading] = useState(true)
+  const [currentTime, setCurrentTime] = useState(new Date())
+
+  const [speechEnabled, setSpeechEnabled] = useState(false)
+  const [videoUrl, setVideoUrl] = useState<string>(
+    "https://www.youtube.com/embed/jAQvxW2l-Pg"
+  ) // Default video
+
+  // Use useRef instead of useState for tracking previous queues
+
+  const synthRef = useRef<SpeechSynthesis | null>(null)
+
+  // Track announced queue IDs to prevent double speak
+  const announcedQueueIdsRef = useRef<Set<string>>(new Set())
+
+  // Track already processed queues to prevent double-processing
+  const processedQueueUpdatesRef = useRef<Set<string>>(new Set())
+
+  // Generate a unique key for a queue update to track duplicates
+  const getQueueUpdateKey = (
+    type: string,
+    queueId: string,
+    timestamp: number = Date.now()
+  ) => {
+    return `${type}-${queueId}-${Math.floor(timestamp / 1000)}`
+  }
+
+  // Fungsi untuk mengucapkan teks - wrapped in useCallback
+  const speak = useCallback(
+    (text: string) => {
+      try {
+        // Check if speech is enabled by user first
+        if (!speechEnabled) {
+          console.log(
+            "⚠️ Speech not enabled by user yet. Skipping announcement."
+          )
+          toast.error("Aktifkan suara dengan klik tombol 'Aktifkan Suara'")
+          return
+        }
+
+        // Safety check for browser environment
+        if (typeof window === "undefined") {
+          console.error("❌ Not in browser environment")
+          return
+        }
+
+        // Check if speech synthesis is available
+        if (!window.speechSynthesis) {
+          console.error("❌ Speech synthesis not supported in this browser")
+          toast.error("Browser Anda tidak mendukung pengumuman suara")
+          return
+        }
+
+        if (!synthRef.current) {
+          synthRef.current = window.speechSynthesis
+        }
+
+        // Cek apakah browser mendukung speech synthesis
+        if (typeof SpeechSynthesisUtterance === "undefined") {
+          console.error(
+            "❌ SpeechSynthesisUtterance not supported in this browser"
+          )
+          toast.error("Browser Anda tidak mendukung pengumuman suara")
+          return
+        }
+
+        // Hentikan pengucapan sebelumnya jika ada
+        try {
+          window.speechSynthesis.cancel()
+        } catch (e) {
+          console.error("Error canceling previous speech:", e)
+        }
+
+        // Buat utterance baru
+        const utterance = new SpeechSynthesisUtterance(text)
+
+        // Gunakan en-US sebagai default, karena lebih banyak didukung browser
+        utterance.lang = "en-US"
+        utterance.rate = 0.9
+        utterance.volume = 1.0
+
+        // Get available voices safely
+        let voices: SpeechSynthesisVoice[] = []
+        try {
+          voices = window.speechSynthesis.getVoices() || []
+          console.log(`🔊 Available voices: ${voices.length}`)
+        } catch (e) {
+          console.error("Error getting voices:", e)
+        }
+
+        // Gunakan suara default browser jika tidak ada yang cocok
+        // Coba berbagai suara jika tersedia
+        if (voices.length > 0) {
+          // Ambil voice default
+          const defaultVoice =
+            voices.find((voice) => voice.default) || voices[0]
+          utterance.voice = defaultVoice
+
+          // Coba cari suara yang cocok (tapi tetap gunakan default jika gagal)
+          const indonesianVoice = voices.find((voice) => voice.lang === "id-ID")
+          if (indonesianVoice) {
+            utterance.voice = indonesianVoice
+            utterance.lang = "id-ID"
+          } else {
+            // Coba cari voice female
+            const femaleVoice = voices.find((voice) =>
+              voice.name.toLowerCase().includes("female")
+            )
+            if (femaleVoice) {
+              utterance.voice = femaleVoice
+            }
+          }
+        }
+
+        // Debug
+        console.log(
+          `🔊 Will speak using voice: ${
+            utterance.voice?.name || "default browser voice"
+          }`
+        )
+
+        // Add event handlers for debugging - and prevent them from throwing errors
+        utterance.onstart = () => {
+          try {
+            console.log("🔊 Speech started")
+          } catch (e) {
+            console.error("Error in onstart handler:", e)
+          }
+        }
+
+        utterance.onend = () => {
+          try {
+            console.log("🔊 Speech ended")
+          } catch (e) {
+            console.error("Error in onend handler:", e)
+          }
+        }
+
+        utterance.onerror = (event) => {
+          try {
+            // Safely log error object
+            console.error(
+              "❌ Speech error:",
+              event
+                ? JSON.stringify(event, Object.getOwnPropertyNames(event))
+                : "Empty error object"
+            )
+
+            // Check for common speech errors and provide more specific messages
+            let errorMessage = "Gagal mengucapkan pengumuman"
+
+            // Some browsers return empty error objects
+            if (event && event.error) {
+              // Add specific error handling based on error type if present
+              switch (event.error) {
+                case "not-allowed":
+                  errorMessage =
+                    "Browser tidak mengizinkan penggunaan suara, periksa izin"
+                  break
+                case "canceled":
+                  // This is often not an actual error, so we may want to skip the toast
+                  return
+                case "audio-busy":
+                  errorMessage = "Sistem audio sedang digunakan"
+                  break
+                default:
+                  errorMessage = `Error: ${event.error}`
+              }
+            }
+
+            toast.error(errorMessage)
+          } catch (e) {
+            console.error("Error in onerror handler:", e)
+          }
+        }
+
+        // Speak the text
+        try {
+          console.log(`🔊 Speaking: "${text}"`)
+          window.speechSynthesis.speak(utterance)
+        } catch (e) {
+          console.error("❌ Failed to speak:", e)
+          toast.error("Gagal mengucapkan pengumuman")
+        }
+      } catch (e) {
+        console.error("❌ Unexpected error in speak function:", e)
+        toast.error("Terjadi error saat mengucapkan pengumuman")
+      }
+    },
+    [speechEnabled]
+  )
+
+  // Menangani pembaruan antrean dari server
+  const handleQueueUpdate = useCallback(
+    (data: QueueUpdateData) => {
+      console.log("📡 Received queue update:", data)
+
+      // Generate unique key for this update
+      const updateKey = getQueueUpdateKey(
+        data.type,
+        data.queue.id,
+        data.timestamp || Date.now()
+      )
+
+      // Check if we've already processed this exact update
+      if (processedQueueUpdatesRef.current.has(updateKey)) {
+        console.log("⏩ Skipping duplicate queue update:", updateKey)
+        return
+      }
+
+      // Mark this update as processed
+      processedQueueUpdatesRef.current.add(updateKey)
+
+      // Clean up old processed updates (keep only last 50)
+      if (processedQueueUpdatesRef.current.size > 50) {
+        const entries = Array.from(processedQueueUpdatesRef.current)
+        entries.slice(0, 25).forEach((key) => {
+          processedQueueUpdatesRef.current.delete(key)
+        })
+      }
+
+      if (data.type === "CALLED") {
+        // Speak only if this specific queue hasn't been announced yet
+        if (!announcedQueueIdsRef.current.has(data.queue.id)) {
+          const counter = counters.find(
+            (c) => c.id === data.queue.counterServingId
+          )
+          if (counter) {
+            const announcement = `Nomor antrean ${data.queue.number} silakan menuju meja ${counter.number}`
+            speak(announcement)
+
+            // Mark this queue as announced
+            announcedQueueIdsRef.current.add(data.queue.id)
+
+            // Clean up old announced IDs (keep only last 20)
+            if (announcedQueueIdsRef.current.size > 20) {
+              const ids = Array.from(announcedQueueIdsRef.current)
+              ids.slice(0, 10).forEach((id) => {
+                announcedQueueIdsRef.current.delete(id)
+              })
+            }
+          }
+        }
+      }
+
+      // Update queues state
+      setQueues((prevQueues) => {
+        const updatedQueues = prevQueues.map((queue) => {
+          if (queue.id === data.queue.id) {
+            // Convert socket data to full Queue interface
+            return {
+              ...queue,
+              ...data.queue,
+              servedBy: data.counter
+                ? {
+                    id: data.counter.id,
+                    name: data.counter.name,
+                    number: data.counter.number,
+                    isActive: data.counter.isActive
+                  }
+                : queue.servedBy,
+              updatedAt: data.timestamp || Date.now()
+            }
+          }
+          return queue
+        })
+
+        // If this is a new queue (not found in existing queues), add it
+        if (!prevQueues.find((q) => q.id === data.queue.id)) {
+          updatedQueues.push({
+            ...data.queue,
+            servedBy: data.counter
+              ? {
+                  id: data.counter.id,
+                  name: data.counter.name,
+                  number: data.counter.number,
+                  isActive: data.counter.isActive
+                }
+              : null,
+            updatedAt: data.timestamp || Date.now()
+          })
+        }
+
+        return updatedQueues
+      })
+
+      // Update counters if provided
+      if (data.counter) {
+        setCounters((prevCounters) => {
+          const updatedCounters = prevCounters.map((counter) =>
+            counter.id === data.counter!.id
+              ? {
+                  id: data.counter!.id,
+                  name: data.counter!.name,
+                  number: data.counter!.number,
+                  isActive: data.counter!.isActive
+                }
+              : counter
+          )
+          return updatedCounters
+        })
+      }
+
+      console.log("✅ Queue update processed:", data.type, data.queue.number)
+    },
+    [speak, counters]
+  )
+
+  // Menangani pemanggilan ulang dari server
+  const handleRecallEvent = useCallback(
+    (data: RecallEventData) => {
+      console.log("📢 Received recall event:", data)
+
+      // Speak the recall announcement
+      const announcement = `Pemanggilan ulang, nomor antrean ${data.queueNumber} silakan menuju meja ${data.counterNumber}`
+      speak(announcement)
+
+      // Show toast notification
+      toast(`Pemanggilan ulang untuk nomor ${data.queueNumber}`)
+    },
+    [speak]
+  )
+
+  // Socket connection
+  useSocketConnection()
+
+  // Subscribe to socket events
+  useQueueUpdates(handleQueueUpdate)
+  useRecallEvents(handleRecallEvent)
+
+  // Untuk mengambil data awal dan mengatur auto-refresh
+  const loadInitialData = async () => {
+    try {
+      await fetchData()
+    } catch (error) {
+      console.error("Error loading initial data:", error)
+      toast.error("Gagal memuat data awal")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Fungsi untuk mengambil data dari API
+  const fetchData = async () => {
+    try {
+      const [queuesResponse, countersResponse, settingsResponse] =
+        await Promise.all([
+          fetch("/api/queues"),
+          fetch("/api/counters"),
+          fetch("/api/settings")
+        ])
+
+      if (!queuesResponse.ok || !countersResponse.ok) {
+        throw new Error("Failed to fetch data")
+      }
+
+      const queuesData = await queuesResponse.json()
+      const countersData = await countersResponse.json()
+
+      console.log("📊 Fetched queues:", queuesData?.length || 0)
+      console.log("📊 Fetched counters:", countersData?.length || 0)
+
+      // Process queues data to ensure consistent format
+      const processedQueues = queuesData.map((newQueue: Queue) => {
+        const existingQueue = queues.find((q) => q.id === newQueue.id)
+        return existingQueue ? existingQueue : newQueue
+      })
+
+      setQueues(processedQueues)
+      setCounters(countersData)
+
+      // Fetch and set video URL from settings
+      if (settingsResponse.ok) {
+        const settingsData = await settingsResponse.json()
+        if (settingsData.videoUrl) {
+          setVideoUrl(settingsData.videoUrl)
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching data:", error)
+      if (!queues.length && !counters.length) {
+        toast.error("Gagal memuat data")
+      }
+    }
+  }
+
+  // Fungsi untuk memformat waktu
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    })
+  }
+
+  // Fungsi untuk memformat tanggal
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString("id-ID", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric"
+    })
+  }
+
+  // useEffect untuk mengatur timer dan data awal
+  useEffect(() => {
+    // Set initial speech state from localStorage
+    const savedSpeechEnabled = localStorage.getItem("speechEnabled")
+    if (savedSpeechEnabled) {
+      setSpeechEnabled(savedSpeechEnabled === "true")
+    }
+
+    loadInitialData()
+
+    // Set up timer for current time
+    const timeInterval = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 1000)
+
+    return () => {
+      clearInterval(timeInterval)
+    }
+  }, [])
+
+  // Get queues that are currently called or being served
+  const calledQueues = queues.filter(
+    (queue) => queue.status === "CALLED" || queue.status === "SERVING"
+  )
+
+  if (loading) {
+    return <LoadingSpinner fullScreen message="Memuat tampilan antrean..." />
+  }
+
+  // Ensure we have exactly 8 meja for display
+  const displayCounters = Array.from({ length: 8 }, (_, index) => {
+    const existingCounter = counters.find((c) => c.number === index + 1)
+    return (
+      existingCounter || {
+        id: `placeholder-${index + 1}`,
+        name: `Meja ${index + 1}`,
+        number: index + 1,
+        isActive: false
+      }
+    )
+  })
+
+  return (
+    <div className="h-screen bg-gradient-to-br from-blue-50 via-white to-green-50 overflow-hidden">
+      <Toaster position="top-right" />
+
+      {/* Main Container */}
+      <div className="h-full p-3 md:p-4 lg:p-6">
+        {/* Main Layout - Left: Meja Cards, Right: Institution Info & Video */}
+        <div className="h-full">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-4 lg:gap-6 h-full">
+            {/* Left - Meja Cards */}
+            <div className="lg:col-span-6 order-2 lg:order-1">
+              <div className="bg-white rounded-xl lg:rounded-2xl shadow-xl border border-gray-100 h-full">
+                {/* Meja Grid - Always 2 columns, 4 rows */}
+                <div className="grid grid-cols-2 grid-rows-4 gap-2 md:gap-3 lg:gap-4 p-4 h-full">
+                  {displayCounters.map((counter) => {
+                    const activeQueue = calledQueues.find(
+                      (q) => q.counterServingId === counter.id
+                    )
+
+                    const isPlaceholder = counter.id.startsWith("placeholder-")
+
+                    return (
+                      <div
+                        key={counter.id}
+                        className={`rounded-lg lg:rounded-xl shadow-lg overflow-hidden border-2 transition-all duration-300 transform hover:scale-105 flex flex-col h-full ${
+                          activeQueue
+                            ? activeQueue.status === "CALLED"
+                              ? "border-yellow-400 bg-gradient-to-br from-yellow-50 to-yellow-100 shadow-yellow-200"
+                              : "border-green-400 bg-gradient-to-br from-green-50 to-green-100 shadow-green-200"
+                            : isPlaceholder
+                            ? "border-gray-300 bg-gradient-to-br from-gray-50 to-gray-100"
+                            : "border-blue-300 bg-gradient-to-br from-blue-50 to-blue-100 shadow-blue-200"
+                        }`}
+                      >
+                        {/* Header */}
+                        <div
+                          className={`py-2 md:py-2.5 px-3 md:px-4 text-center font-bold text-white text-sm md:text-base relative flex-shrink-0 ${
+                            activeQueue
+                              ? activeQueue.status === "CALLED"
+                                ? "bg-gradient-to-r from-yellow-500 to-yellow-600"
+                                : "bg-gradient-to-r from-green-500 to-green-600"
+                              : isPlaceholder
+                              ? "bg-gradient-to-r from-gray-400 to-gray-500"
+                              : "bg-gradient-to-r from-blue-500 to-blue-600"
+                          }`}
+                        >
+                          <div className="absolute inset-0 bg-white opacity-10 rounded-t-lg lg:rounded-t-xl"></div>
+                          <span className="relative">
+                            MEJA {counter.number}
+                          </span>
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 flex flex-col justify-center items-center p-2 md:p-3">
+                          {activeQueue ? (
+                            <>
+                              <div className="text-xs text-gray-500 mb-1 font-medium uppercase tracking-wide text-center">
+                                Nomor Antrian
+                              </div>
+                              <div
+                                className={`text-xl md:text-2xl lg:text-3xl font-bold mb-1 ${
+                                  activeQueue.status === "CALLED"
+                                    ? "text-yellow-600"
+                                    : "text-green-600"
+                                }`}
+                              >
+                                {activeQueue.number}
+                              </div>
+                              <div
+                                className={`px-2 md:px-3 py-1 rounded-full text-xs font-bold text-white shadow-md ${
+                                  activeQueue.status === "CALLED"
+                                    ? "bg-yellow-500"
+                                    : "bg-green-500"
+                                }`}
+                              >
+                                {activeQueue.status === "CALLED"
+                                  ? "DIPANGGIL"
+                                  : "MELAYANI"}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="text-center">
+                              <div className="text-xl md:text-2xl text-gray-400 mb-1 font-light">
+                                --
+                              </div>
+                              <div className="text-xs md:text-sm text-gray-500 font-medium">
+                                {isPlaceholder ? "TIDAK AKTIF" : "MENUNGGU"}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Right - Institution Info and Video */}
+            <div className="lg:col-span-6 order-1 lg:order-2">
+              <div className="h-full flex flex-col gap-3 md:gap-4 lg:gap-6">
+                {/* Institution Information */}
+                <div className="h-fit min-h-0">
+                  <div className="bg-white rounded-xl lg:rounded-2xl p-4 shadow-xl border border-gray-100 h-full flex flex-col justify-between gap-10">
+                    {/* Institution Header */}
+                    <div>
+                      <div className="flex flex-col sm:flex-row items-center space-y-3 sm:space-y-0 sm:space-x-4 mb-2 lg:mb-3">
+                        {/* Logos */}
+                        <div className="flex items-center space-x-3">
+                          {/* SMAN 10 Surabaya Logo */}
+                          <div className="w-12 h-12 md:w-16 md:h-16 flex items-center justify-center bg-white rounded-lg shadow-md p-1.5">
+                            <Image
+                              src="https://www.dbl.id/uploads/school/13138/810-SMAN_10_SURABAYA.png"
+                              alt="SMAN 10 Surabaya"
+                              width={24}
+                              height={24}
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
+                          {/* Dinas Pendidikan Jatim Logo */}
+                          <div className="w-12 h-12 md:w-16 md:h-16 flex items-center justify-center bg-white rounded-lg shadow-md p-1.5">
+                            <Image
+                              src="https://spmbjatim.net/images/logo.png"
+                              alt="Dinas Pendidikan Jatim"
+                              width={24}
+                              height={24}
+                              className="w-full h-full object-contain"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Institution Text */}
+                        <div className="flex-1 text-center sm:text-left">
+                          <h1 className="text-lg md:text-xl lg:text-2xl font-bold text-gray-800 mb-1 font-inter">
+                            SPMB Jatim 2025
+                          </h1>
+                          <p className="text-base md:text-lg text-gray-600 font-medium">
+                            SMAN 10 Surabaya
+                          </p>
+                          <div className="w-16 h-1 bg-gradient-to-r from-blue-500 to-green-500 rounded-full mt-1 mx-auto sm:mx-0"></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Date and Time */}
+                    <div className="text-center bg-gray-50 rounded-lg p-3 md:p-4 border border-gray-100">
+                      <div className="text-xl md:text-2xl font-bold text-gray-800 mb-1 font-mono">
+                        {formatTime(currentTime)}
+                      </div>
+                      <div className="text-sm md:text-base text-gray-600 capitalize">
+                        {formatDate(currentTime)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Video */}
+                <div className="flex-1 min-h-0">
+                  <div className="bg-white rounded-xl lg:rounded-2xl shadow-xl overflow-hidden border border-gray-100 h-full">
+                    <div className="h-full p-4">
+                      <iframe
+                        src={videoUrl}
+                        className="w-full h-full rounded-lg"
+                        title="Information Video"
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Speech Control Button - Hidden but functional */}
+      <button
+        onClick={() => {
+          setSpeechEnabled(!speechEnabled)
+          localStorage.setItem("speechEnabled", (!speechEnabled).toString())
+          toast.success(
+            speechEnabled ? "Suara dinonaktifkan" : "Suara diaktifkan"
+          )
+        }}
+        className="fixed bottom-4 right-4 w-0 h-0 opacity-0 pointer-events-none"
+        aria-label="Toggle speech"
+      />
+    </div>
+  )
+}

@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Model untuk menyimpan pengaturan sistem
+model Setting {
+  id                String   @id @default("default")
+  dailyQueueLimit   Int      @default(100) // Batas jumlah antrean per hari
+  startNumber       Int      @default(1) // Nomor antrean awal
+  resetQueueDaily   Boolean  @default(true) // Apakah antrean direset tiap hari
+  allowSimultaneous Boolean  @default(false) // Apakah loket bisa memanggil bersamaan
+  videoUrl          String?  @default("https://www.youtube.com/embed/jAQvxW2l-Pg") // URL video YouTube untuk display
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+// Model untuk loket
+model Counter {
+  id           String   @id @default(uuid())
+  name         String // Nama loket
+  number       Int // Nomor loket
+  isActive     Boolean  @default(true)
+  currentQueue Queue?   @relation("CurrentQueue") // Antrean yang sedang dilayani
+  queueHistory Queue[]  @relation("QueueHistory") // Riwayat antrean yang dilayani
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Model untuk antrean
+model Queue {
+  id               String      @id @default(uuid())
+  number           Int // Nomor antrean
+  status           QueueStatus @default(WAITING)
+  servedBy         Counter?    @relation("CurrentQueue", fields: [counterServingId], references: [id])
+  counterServingId String?     @unique // ID loket yang melayani
+  historyCounters  Counter[]   @relation("QueueHistory")
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  date             DateTime    @default(now()) // Tanggal antrean
+}
+
+// Status antrean
+enum QueueStatus {
+  WAITING // Menunggu
+  CALLED // Dipanggil
+  SERVING // Sedang dilayani
+  COMPLETED // Selesai dilayani
+  SKIPPED // Dilewati
+}

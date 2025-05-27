@@ -1,103 +1,149 @@
-import Image from "next/image";
+import Link from "next/link"
+import type { Metadata } from "next"
 
-export default function Home() {
+export const metadata: Metadata = {
+  title: "Queue System - Home",
+  description:
+    "Modern queue management system for businesses with digital interfaces and real-time updates"
+}
+
+export default function HomePage() {
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="flex min-h-screen flex-col bg-white">
+      {/* Airbnb-style Header */}
+      <header className="border-b border-gray-100 py-4 sticky top-0 bg-white z-10 shadow-sm">
+        <div className="container mx-auto px-6">
+          <div className="flex items-center justify-between">
+            {/* Logo - centered on mobile, left on desktop */}
+            <div className="flex-1 flex md:justify-start justify-center md:order-1 order-2">
+              <div className="text-2xl font-nunito font-semibold text-gray-800">
+                <span className="text-rose-500">Q</span>ueue
+              </div>
+            </div>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+            {/* Navigation - hidden on mobile */}
+            <nav className="hidden md:flex justify-center flex-1 md:order-2 order-1">
+              <ul className="flex space-x-8 font-inter text-sm">
+                <li>
+                  <Link href="/" className="text-gray-800 hover:text-rose-500">
+                    Home
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/admin"
+                    className="text-gray-800 hover:text-rose-500"
+                  >
+                    Admin
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href="/display"
+                    className="text-gray-800 hover:text-rose-500"
+                  >
+                    Display
+                  </Link>
+                </li>
+              </ul>
+            </nav>
+
+            {/* Right section - Sign up/Profile */}
+            <div className="flex-1 flex justify-end md:order-3 order-3">
+              <Link
+                href="/admin"
+                className="flex items-center space-x-2 border border-gray-200 rounded-full px-4 py-2 hover:shadow-md transition-all duration-200"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 text-gray-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={1.5}
+                    d="M4 6h16M4 12h16M4 18h16"
+                  />
+                </svg>
+                <div className="h-6 w-6 bg-rose-500 rounded-full flex items-center justify-center">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-4 w-4 text-white"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                    />
+                  </svg>
+                </div>
+              </Link>
+            </div>
+          </div>
         </div>
+      </header>
+
+      <main className="flex-1">
+        {/* Hero Section - Airbnb style */}
+        <section className="relative">
+          {/* Background image with overlay */}
+          <div className="relative h-[700px] w-full overflow-hidden">
+            <div className="absolute inset-0 bg-gradient-to-r from-black/40 to-black/20 z-10"></div>
+            <div
+              className="absolute inset-0 bg-cover bg-center"
+              style={{
+                backgroundImage:
+                  'url("https://images.unsplash.com/photo-1639548538099-6f7f9aec3b92?q=80&w=2586&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D")'
+              }}
+            >
+              {/* Fallback for browsers with style issues */}
+              <div className="absolute inset-0 bg-gray-900/30"></div>
+            </div>
+            <div className="container mx-auto px-6 relative z-20 h-full flex flex-col justify-center">
+              <div className="max-w-2xl">
+                <h1 className="text-5xl md:text-6xl font-bold text-white font-inter mb-6 tracking-tight">
+                  Queue management,
+                  <span className="block"> reimagined.</span>
+                </h1>
+                <p className="text-xl text-white/90 font-inter font-light mb-10 max-w-lg">
+                  Modern queue system for businesses with real-time updates and
+                  digital interfaces.
+                </p>
+                <div className="flex flex-wrap gap-4">
+                  <Link
+                    href="/admin"
+                    className="rounded-lg bg-rose-500 px-7 py-3.5 font-inter font-medium text-white hover:bg-rose-600 transition-all duration-200"
+                  >
+                    Mulai
+                  </Link>
+                  <Link
+                    href="/display"
+                    className="rounded-lg border border-white px-7 py-3.5 font-inter font-medium text-white hover:bg-white/10 transition-all duration-200"
+                  >
+                    Lihat Antrian
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
+
+      {/* Simplified Footer */}
+      <footer className="bg-gray-50 border-t border-gray-100 py-6">
+        <div className="container mx-auto px-6 text-center">
+          <p className="text-gray-500 text-sm font-inter">
+            &copy; {new Date().getFullYear()} Queue System. All rights reserved.
+          </p>
+        </div>
       </footer>
     </div>
-  );
+  )
 }

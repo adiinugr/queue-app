@@ -1,36 +1,122 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sistem Antrean Loket
 
-## Getting Started
+Aplikasi untuk mengelola antrean loket seperti di rumah sakit, bank, atau instansi lainnya. Dibangun dengan Next.js, Prisma, dan Neon Database.
 
-First, run the development server:
+## Fitur
+
+- **Panel Admin**: Kelola pengaturan, loket, dan antrean
+- **Panel Operator Loket**: Antarmuka untuk petugas loket memanggil dan menyelesaikan antrean
+- **Display Antrean**: Tampilan publik untuk menampilkan antrean yang sedang dilayani
+
+## Teknologi
+
+- **Frontend**: Next.js, React, TailwindCSS
+- **Backend**: Next.js API Routes
+- **Database**: PostgreSQL (Neon Database)
+- **ORM**: Prisma
+- **Real-time**: Socket.io
+
+## Instalasi
+
+1. Clone repositori ini
+2. Install dependensi:
+
+```bash
+npm install
+```
+
+3. Salin file `.env.example` ke `.env.local` dan atur DATABASE_URL ke connection string Neon Database Anda:
+
+```bash
+DATABASE_URL="postgresql://user:password@neon.tech:5432/database"
+```
+
+4. Generate Prisma Client:
+
+```bash
+npm run generate
+```
+
+5. Buat migrasi database:
+
+```bash
+npx prisma migrate dev --name init
+```
+
+6. Jalankan aplikasi:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Struktur Aplikasi
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `/src/app` - Kode aplikasi Next.js
+  - `/api` - API routes
+  - `/admin` - Panel admin
+  - `/loket` - Panel operator loket
+  - `/display` - Display antrean
+- `/prisma` - Konfigurasi database
+- `/src/lib` - Library utilities
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Penggunaan
 
-## Learn More
+1. Buka `http://localhost:3000/admin` untuk mengakses panel admin
+2. Atur pengaturan sistem dan tambahkan loket
+3. Buka `http://localhost:3000/loket/[id]` untuk mengakses panel operator loket
+4. Buka `http://localhost:3000/display` untuk melihat display antrean
 
-To learn more about Next.js, take a look at the following resources:
+## Deployment
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Aplikasi dapat di-deploy ke Vercel atau layanan hosting lainnya. Pastikan untuk menyiapkan database Neon Database terlebih dahulu dan menyetel environment variable DATABASE_URL pada layanan hosting.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Kontribusi
 
-## Deploy on Vercel
+Kontribusi selalu diterima. Silakan buat issue atau pull request untuk meningkatkan aplikasi ini.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Lisensi
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Proyek ini dilisensikan di bawah lisensi MIT.
+
+# Queue System Application
+
+A modern queue management system with digital interfaces, real-time updates, and voice announcements.
+
+## Setup Instructions
+
+### Install Dependencies
+
+```bash
+npm install
+```
+
+### Database Setup
+
+```bash
+npm run setup-db
+npm run generate
+```
+
+### Start Development Server
+
+```bash
+npm run dev
+```
+
+## Key Features
+
+- **Admin Panel**: Configure system settings, manage counters, and monitor queues
+- **Counter Interface**: For operators to call and serve customers
+- **Public Display**: Shows current queue status with voice announcements
+- **Voice Announcements**: Calls out queue numbers using the Web Speech API
+- **Real-time Updates**: Uses Socket.io for instant updates across all interfaces
+
+## Technology Stack
+
+- Next.js 15
+- React 19
+- Prisma ORM
+- PostgreSQL
+- Tailwind CSS
+- Socket.io
+- Web Speech API
