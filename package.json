@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
-    "start": "next start",
+    "build": "next build -p 3010",
+    "start": "next start -p 3010",
     "lint": "next lint",
     "setup-db": "node scripts/setup-db.js",
     "generate": "prisma generate",

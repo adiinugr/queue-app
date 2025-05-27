@@ -120,7 +120,7 @@ app.get("/status", (req, res) => {
   })
 })
 
-const PORT = process.env.SOCKET_SERVER_PORT || 3001
+const PORT = process.env.SOCKET_SERVER_PORT || 4010
 server.listen(PORT, () => {
   console.log(`Socket.io server running on port ${PORT}`)
 })
