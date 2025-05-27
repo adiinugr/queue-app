@@ -11,6 +11,44 @@ import {
   RecallEventData,
   useSocketConnection
 } from "../../lib/socket-client"
+import { Expand, Shrink } from "lucide-react"
+
+// Helper function to convert YouTube URL to embed format
+const getYouTubeEmbedUrl = (url: string): string => {
+  if (!url) return ""
+  let videoId = ""
+
+  try {
+    const urlObj = new URL(url)
+    if (urlObj.hostname === "youtu.be") {
+      videoId = urlObj.pathname.slice(1)
+    } else if (
+      urlObj.hostname === "www.youtube.com" ||
+      urlObj.hostname === "youtube.com"
+    ) {
+      if (urlObj.pathname === "/watch") {
+        videoId = urlObj.searchParams.get("v") || ""
+      } else if (urlObj.pathname.startsWith("/embed/")) {
+        videoId = urlObj.pathname.split("/embed/")[1]
+      } else if (urlObj.pathname.startsWith("/v/")) {
+        videoId = urlObj.pathname.split("/v/")[1]
+      }
+    }
+  } catch (error) {
+    console.error("Error parsing YouTube URL:", error)
+    // Fallback for non-URL strings that might just be an ID
+    if (!url.includes("/") && !url.includes(".")) {
+      videoId = url
+    }
+  }
+
+  if (!videoId) {
+    console.warn("Could not extract YouTube video ID from URL:", url)
+    // Fallback to a default video or return empty string to avoid breaking iframe
+    return "https://www.youtube.com/embed/jAQvxW2l-Pg" // Default or error video
+  }
+  return `https://www.youtube.com/embed/${videoId}`
+}
 
 // Tipe data untuk antrean
 interface Queue {
@@ -37,9 +75,10 @@ export default function DisplayPage() {
   const [currentTime, setCurrentTime] = useState(new Date())
 
   const [speechEnabled, setSpeechEnabled] = useState(false)
-  const [videoUrl, setVideoUrl] = useState<string>(
-    "https://www.youtube.com/embed/jAQvxW2l-Pg"
-  ) // Default video
+  const [videoUrl, setVideoUrl] = useState<string>(() =>
+    getYouTubeEmbedUrl("https://www.youtube.com/embed/jAQvxW2l-Pg")
+  ) // Default video, processed
+  const [isFullscreen, setIsFullscreen] = useState(false)
 
   // Use useRef instead of useState for tracking previous queues
 
@@ -408,7 +447,7 @@ export default function DisplayPage() {
       if (settingsResponse.ok) {
         const settingsData = await settingsResponse.json()
         if (settingsData.videoUrl) {
-          setVideoUrl(settingsData.videoUrl)
+          setVideoUrl(getYouTubeEmbedUrl(settingsData.videoUrl)) // Process URL
         }
       }
     } catch (error) {
@@ -436,6 +475,19 @@ export default function DisplayPage() {
       month: "long",
       day: "numeric"
     })
+  }
+
+  // Function to toggle fullscreen
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen()
+      setIsFullscreen(true)
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen()
+        setIsFullscreen(false)
+      }
+    }
   }
 
   // useEffect untuk mengatur timer dan data awal
@@ -641,7 +693,15 @@ export default function DisplayPage() {
                   <div className="bg-white rounded-xl lg:rounded-2xl shadow-xl overflow-hidden border border-gray-100 h-full">
                     <div className="h-full p-4">
                       <iframe
-                        src={videoUrl}
+                        src={
+                          videoUrl
+                            ? `${videoUrl}${
+                                videoUrl.includes("?") ? "&" : "?"
+                              }autoplay=1&mute=1&loop=1&playlist=${
+                                videoUrl.split("/embed/")[1]?.split("?")[0]
+                              }`
+                            : ""
+                        }
                         className="w-full h-full rounded-lg"
                         title="Information Video"
                         frameBorder="0"
@@ -656,6 +716,15 @@ export default function DisplayPage() {
           </div>
         </div>
       </div>
+
+      {/* Fullscreen Control Button */}
+      <button
+        onClick={toggleFullScreen}
+        className="fixed top-4 right-4 bg-gray-800/30 hover:bg-opacity-40 text-white p-2 rounded-full shadow-lg z-50 text-2xl"
+        aria-label="Toggle fullscreen"
+      >
+        {isFullscreen ? <Shrink size={20} /> : <Expand size={20} />}
+      </button>
 
       {/* Speech Control Button - Hidden but functional */}
       <button

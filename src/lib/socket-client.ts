@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
-import { io, Socket } from "socket.io-client"
+import io from "socket.io-client"
+import { type Socket } from "socket.io-client/dist/socket"
 
 // Event types for socket communication
 export enum SOCKET_EVENTS {
@@ -56,7 +57,7 @@ class SocketManager {
   private listeners: Map<string, Set<(data: unknown) => void>> = new Map()
   private connectionListeners: Set<(status: boolean) => void> = new Set()
   private socketUrl =
-    process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
+    process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4010"
   private isConnected = false
   private reconnectAttempts = 0
   private reconnectTimeout: NodeJS.Timeout | null = null
