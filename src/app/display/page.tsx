@@ -693,8 +693,7 @@ export default function DisplayPage() {
                   <div className="bg-white rounded-xl lg:rounded-2xl shadow-xl overflow-hidden border border-gray-100 h-full">
                     <div className="h-full p-4">
                       {(() => {
-                        // Ensure videoUrl is always a valid embed URL or empty string before rendering iframe
-                        const currentEmbedUrl = getYouTubeEmbedUrl(videoUrl) // Re-process for safety
+                        const currentEmbedUrl = getYouTubeEmbedUrl(videoUrl)
                         let playlistId = ""
                         if (
                           currentEmbedUrl &&
@@ -706,31 +705,29 @@ export default function DisplayPage() {
                               ?.split("?")[0] || ""
                         }
 
+                        let iframeSrc = ""
+                        let iframeTitle = "Information Video (Default)"
+
                         if (!currentEmbedUrl || !playlistId) {
-                          // If we don't have a valid embed URL or playlist ID (e.g., from a bad setting or parsing fallback),
-                          // render nothing or a placeholder to avoid iframe errors.
-                          // Using default video ID from getYouTubeEmbedUrl's own fallback if currentEmbedUrl is the default.
-                          const defaultVideoId = "jAQvxW2l-Pg" // Default video ID used in getYouTubeEmbedUrl fallback
-                          const defaultEmbedUrl = `https://www.youtube.com/embed/${defaultVideoId}`
-                          return (
-                            <iframe
-                              src={`${defaultEmbedUrl}?autoplay=1&mute=1&loop=1&playlist=${defaultVideoId}`}
-                              className="w-full h-full rounded-lg"
-                              title="Information Video (Default)"
-                              frameBorder="0"
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                            />
-                          )
+                          const defaultVideoId = "jAQvxW2l-Pg"
+                          iframeSrc = `https://www.youtube.com/embed/${defaultVideoId}?autoplay=1&mute=1&loop=1&playlist=${defaultVideoId}`
+                        } else {
+                          iframeSrc = `${currentEmbedUrl}${
+                            currentEmbedUrl.includes("?") ? "&" : "?"
+                          }autoplay=1&mute=1&loop=1&playlist=${playlistId}`
+                          iframeTitle = "Information Video"
                         }
+
+                        console.log(
+                          "[DisplayPage] Rendering iframe with src:",
+                          iframeSrc
+                        ) // Log the src
 
                         return (
                           <iframe
-                            src={`${currentEmbedUrl}${
-                              currentEmbedUrl.includes("?") ? "&" : "?"
-                            }autoplay=1&mute=1&loop=1&playlist=${playlistId}`}
+                            src={iframeSrc}
                             className="w-full h-full rounded-lg"
-                            title="Information Video"
+                            title={iframeTitle}
                             frameBorder="0"
                             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                             allowFullScreen
