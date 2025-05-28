@@ -11,7 +11,7 @@ import {
   RecallEventData,
   useSocketConnection
 } from "../../lib/socket-client"
-import { Expand, Shrink } from "lucide-react"
+import { Expand, Shrink, Volume2, VolumeX } from "lucide-react"
 
 // Helper function to convert YouTube URL to embed format
 const getYouTubeEmbedUrl = (url: string): string => {
@@ -906,7 +906,7 @@ export default function DisplayPage() {
         {isFullscreen ? <Shrink size={20} /> : <Expand size={20} />}
       </button>
 
-      {/* Speech Control Button - Hidden but functional */}
+      {/* Speech Control Button - Styled with icon and positioned below fullscreen button */}
       <button
         onClick={() => {
           const newSpeechEnabled = !speechEnabled
@@ -922,10 +922,10 @@ export default function DisplayPage() {
             setAnnouncementToMake(null) // Clear any pending announcement if disabling
           }
         }}
-        className="fixed bottom-4 right-4 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full z-50 shadow-lg"
+        className="fixed top-16 right-4 bg-gray-800/30 hover:bg-opacity-40 text-white p-2 rounded-full shadow-lg z-50 text-2xl"
         aria-label="Toggle speech"
       >
-        {speechEnabled ? "Matikan Suara" : "Aktifkan Suara"}
+        {speechEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
       </button>
     </div>
   )
