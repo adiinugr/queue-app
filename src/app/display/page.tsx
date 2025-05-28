@@ -689,6 +689,12 @@ export default function DisplayPage() {
                 </div>
 
                 {/* Video */}
+                {(() => {
+                  console.log(
+                    "[DisplayPage] Attempting to render video section..."
+                  )
+                  return null
+                })()}
                 <div className="flex-1 min-h-0">
                   <div className="bg-white rounded-xl lg:rounded-2xl shadow-xl overflow-hidden border border-gray-100 h-full">
                     <div className="h-full p-4">
