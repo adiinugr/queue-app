@@ -4,7 +4,7 @@ export async function GET() {
   try {
     // Test endpoint to emit a socket event via API
     const socketServerUrl =
-      process.env.SOCKET_SERVER_URL || "http://localhost:3001"
+      process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
 
     const testData = {
       type: "TEST_EVENT",

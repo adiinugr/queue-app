@@ -128,12 +128,36 @@ class SocketManager {
         )
       })
 
+      // DIRECT TEST LISTENER FOR QUEUE_UPDATE
+      this.socket?.on(SOCKET_EVENTS.QUEUE_UPDATE, (data: QueueUpdateData) => {
+        console.log(
+          "🔥🔥🔥 [SocketManager] DIRECT LISTENER received <queue-update> event:",
+          data
+        )
+        // We can also try to notify listeners from here directly as a test, though it might cause double processing if the main one also works.
+        // this.notifyEventListeners(SOCKET_EVENTS.QUEUE_UPDATE, data);
+      })
+
       // Setup event handlers for other event types
+      console.log(
+        "[SocketManager] About to set up listeners for all SOCKET_EVENTS. QUEUE_UPDATE is:",
+        SOCKET_EVENTS.QUEUE_UPDATE
+      )
       Object.values(SOCKET_EVENTS).forEach((eventType) => {
-        this.socket?.on(eventType, (data: any) => {
-          console.log(`📩 Received ${eventType} event:`, data)
-          this.notifyEventListeners(eventType, data)
-        })
+        // Ensure the eventType is a valid key of SOCKET_EVENTS to prevent listening to undefined event names.
+        if (Object.values(SOCKET_EVENTS).includes(eventType as SOCKET_EVENTS)) {
+          this.socket?.on(eventType, (data: any) => {
+            console.log(
+              `📩 [SocketManager] Received raw <${eventType}> event:`,
+              data
+            ) // Added eventType to log
+            this.notifyEventListeners(eventType, data)
+          })
+        } else {
+          console.warn(
+            `[SocketManager] Skipping setup for unknown eventType: ${eventType}`
+          )
+        }
       })
     } catch (error) {
       console.error("Failed to initialize socket:", error)
@@ -296,7 +320,7 @@ export function useQueueUpdates(
 
   useEffect(() => {
     if (lastEvent) {
-      console.log("🔄 Processing queue update:", lastEvent)
+      // console.log("🔄 [useQueueUpdates] Hook processing queue update via lastEvent:", lastEvent);
       callback(lastEvent)
     }
   }, [lastEvent, callback])

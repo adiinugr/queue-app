@@ -16,13 +16,6 @@ export const POST = withErrorHandlerNoReq(async () => {
     }
   })
 
-  // Memastikan semua loket tidak memiliki antrean aktif
-  await prisma.counter.updateMany({
-    data: {
-      counterServingId: null
-    }
-  })
-
   return NextResponse.json({
     success: true,
     message: "Semua antrean berhasil direset"

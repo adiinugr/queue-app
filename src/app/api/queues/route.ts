@@ -19,7 +19,7 @@ async function emitSocketEvent(
 ) {
   try {
     const socketServerUrl =
-      process.env.SOCKET_SERVER_URL || "http://localhost:3001"
+      process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
 
     console.log(`Emitting ${eventType} event:`, eventData)
 

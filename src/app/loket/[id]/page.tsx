@@ -149,7 +149,7 @@ export default function CounterPage() {
     if (completeQueueLoading) return
 
     if (!counter?.currentQueue) {
-      setError("Loket tidak sedang melayani antrean")
+      // setError("Loket tidak sedang melayani antrean") // Optionally remove if setError is causing unwanted console logs
       toast.error("Loket tidak sedang melayani antrean")
       return
     }

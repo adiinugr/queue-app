@@ -6,7 +6,7 @@ import { withErrorHandler } from "../../middleware"
 async function emitSocketEvent(eventType: string, eventData: any) {
   try {
     const socketServerUrl =
-      process.env.SOCKET_SERVER_URL || "http://localhost:3001"
+      process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
 
     const response = await fetch(`${socketServerUrl}/api/emit`, {
       method: "POST",

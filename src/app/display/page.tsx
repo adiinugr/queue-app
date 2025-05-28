@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useRef, useCallback } from "react"
+import { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import Image from "next/image"
 import LoadingSpinner from "../components/LoadingSpinner"
 import toast, { Toaster } from "react-hot-toast"
@@ -74,6 +74,8 @@ export default function DisplayPage() {
   const [loading, setLoading] = useState(true)
   const [currentTime, setCurrentTime] = useState(new Date())
 
+  const countersRef = useRef<Counter[]>(counters) // Ref for counters
+
   const [speechEnabled, setSpeechEnabled] = useState(false)
   const [videoUrl, setVideoUrl] = useState<string>(() =>
     getYouTubeEmbedUrl("https://www.youtube.com/embed/jAQvxW2l-Pg")
@@ -89,6 +91,56 @@ export default function DisplayPage() {
 
   // Track already processed queues to prevent double-processing
   const processedQueueUpdatesRef = useRef<Set<string>>(new Set())
+
+  // Memoize iframe source and title calculation
+  const memoizedVideoData = useMemo(() => {
+    console.log(
+      "[DisplayPage:useMemo] Recalculating video data for videoUrl:",
+      videoUrl
+    )
+    const currentEmbedUrl = getYouTubeEmbedUrl(videoUrl)
+    console.log(
+      "[DisplayPage:useMemo] Processed currentEmbedUrl:",
+      currentEmbedUrl
+    )
+
+    let playlistId = ""
+    if (currentEmbedUrl && currentEmbedUrl.includes("/embed/")) {
+      playlistId = currentEmbedUrl.split("/embed/")[1]?.split("?")[0] || ""
+    }
+    console.log("[DisplayPage:useMemo] Extracted playlistId:", playlistId)
+
+    let iframeSrc = ""
+    let iframeTitle = "Information Video (Default)"
+
+    if (!currentEmbedUrl || !playlistId) {
+      console.log(
+        "[DisplayPage:useMemo] Fallback condition met. currentEmbedUrl:",
+        currentEmbedUrl,
+        "playlistId:",
+        playlistId
+      )
+      const defaultVideoId = "jAQvxW2l-Pg" // Default video ID
+      iframeSrc = `https://www.youtube.com/embed/${defaultVideoId}?autoplay=1&mute=1&loop=1&playlist=${defaultVideoId}`
+    } else {
+      console.log(
+        "[DisplayPage:useMemo] Using processed URL. currentEmbedUrl:",
+        currentEmbedUrl,
+        "playlistId:",
+        playlistId
+      )
+      iframeSrc = `${currentEmbedUrl}${
+        currentEmbedUrl.includes("?") ? "&" : "?"
+      }autoplay=1&mute=1&loop=1&playlist=${playlistId}`
+      iframeTitle = "Information Video"
+    }
+
+    console.log(
+      "[DisplayPage:useMemo] Final iframeSrc to be rendered:",
+      iframeSrc
+    )
+    return { iframeSrc, iframeTitle }
+  }, [videoUrl]) // Dependency: only re-calculate when videoUrl changes
 
   // Generate a unique key for a queue update to track duplicates
   const getQueueUpdateKey = (
@@ -267,20 +319,27 @@ export default function DisplayPage() {
   // Menangani pembaruan antrean dari server
   const handleQueueUpdate = useCallback(
     (data: QueueUpdateData) => {
-      console.log("📡 Received queue update:", data)
+      // console.log(
+      //   "📡 [DisplayPage] Received raw queue update event from socket-client:",
+      //   JSON.stringify(data)
+      // );
 
-      // Generate unique key for this update
       const updateKey = getQueueUpdateKey(
         data.type,
         data.queue.id,
         data.timestamp || Date.now()
       )
+      // console.log(`[DisplayPage] Generated updateKey: ${updateKey}`); // Commented out
 
       // Check if we've already processed this exact update
       if (processedQueueUpdatesRef.current.has(updateKey)) {
-        console.log("⏩ Skipping duplicate queue update:", updateKey)
+        // console.log(
+        //   "⏩ [DisplayPage] Skipping duplicate queue update:",
+        //   updateKey
+        // );
         return
       }
+      // console.log("[DisplayPage] New update, processing..."); // Optional: keep if you want to see non-duplicate processing
 
       // Mark this update as processed
       processedQueueUpdatesRef.current.add(updateKey)
@@ -294,90 +353,124 @@ export default function DisplayPage() {
       }
 
       if (data.type === "CALLED") {
-        // Speak only if this specific queue hasn't been announced yet
+        console.log(
+          "[DisplayPage] Update type is CALLED. Checking if announced..."
+        )
         if (!announcedQueueIdsRef.current.has(data.queue.id)) {
-          const counter = counters.find(
+          console.log(
+            `[DisplayPage] Queue ${data.queue.id} not announced yet. Attempting to find counter.`
+          )
+          const counter = countersRef.current.find(
             (c) => c.id === data.queue.counterServingId
           )
           if (counter) {
             const announcement = `Nomor antrean ${data.queue.number} silakan menuju meja ${counter.number}`
+            console.log("[DisplayPage] Announcing:", announcement)
             speak(announcement)
-
-            // Mark this queue as announced
             announcedQueueIdsRef.current.add(data.queue.id)
-
-            // Clean up old announced IDs (keep only last 20)
             if (announcedQueueIdsRef.current.size > 20) {
               const ids = Array.from(announcedQueueIdsRef.current)
               ids.slice(0, 10).forEach((id) => {
                 announcedQueueIdsRef.current.delete(id)
               })
             }
+          } else {
+            console.warn(
+              "[DisplayPage] Counter not found for CALLED queue:",
+              data.queue.counterServingId,
+              "Available counters:",
+              countersRef.current
+            )
           }
+        } else {
+          console.log("[DisplayPage] Queue already announced:", data.queue.id)
         }
       }
 
       // Update queues state
       setQueues((prevQueues) => {
-        const updatedQueues = prevQueues.map((queue) => {
-          if (queue.id === data.queue.id) {
-            // Convert socket data to full Queue interface
-            return {
-              ...queue,
+        console.log(
+          "[DisplayPage] setQueues: prevQueues:",
+          JSON.stringify(prevQueues)
+        )
+        const existingQueueIndex = prevQueues.findIndex(
+          (q) => q.id === data.queue.id
+        )
+        let updatedQueues
+
+        if (existingQueueIndex !== -1) {
+          console.log(
+            "[DisplayPage] setQueues: Updating existing queue:",
+            data.queue.id
+          )
+          updatedQueues = prevQueues.map((queue) =>
+            queue.id === data.queue.id
+              ? {
+                  ...queue,
+                  ...data.queue,
+                  servedBy: data.counter ? { ...data.counter } : queue.servedBy,
+                  updatedAt: data.timestamp || Date.now()
+                }
+              : queue
+          )
+        } else {
+          console.log(
+            "[DisplayPage] setQueues: Adding new queue:",
+            data.queue.id
+          )
+          updatedQueues = [
+            ...prevQueues,
+            {
               ...data.queue,
-              servedBy: data.counter
-                ? {
-                    id: data.counter.id,
-                    name: data.counter.name,
-                    number: data.counter.number,
-                    isActive: data.counter.isActive
-                  }
-                : queue.servedBy,
+              servedBy: data.counter ? { ...data.counter } : null,
               updatedAt: data.timestamp || Date.now()
             }
-          }
-          return queue
-        })
-
-        // If this is a new queue (not found in existing queues), add it
-        if (!prevQueues.find((q) => q.id === data.queue.id)) {
-          updatedQueues.push({
-            ...data.queue,
-            servedBy: data.counter
-              ? {
-                  id: data.counter.id,
-                  name: data.counter.name,
-                  number: data.counter.number,
-                  isActive: data.counter.isActive
-                }
-              : null,
-            updatedAt: data.timestamp || Date.now()
-          })
+          ]
         }
-
+        console.log(
+          "[DisplayPage] setQueues: nextQueues:",
+          JSON.stringify(updatedQueues)
+        )
         return updatedQueues
       })
 
       // Update counters if provided
       if (data.counter) {
+        console.log(
+          "[DisplayPage] data.counter exists. Updating counters state.",
+          JSON.stringify(data.counter)
+        )
         setCounters((prevCounters) => {
-          const updatedCounters = prevCounters.map((counter) =>
-            counter.id === data.counter!.id
-              ? {
-                  id: data.counter!.id,
-                  name: data.counter!.name,
-                  number: data.counter!.number,
-                  isActive: data.counter!.isActive
-                }
-              : counter
+          console.log(
+            "[DisplayPage] setCounters: prevCounters:",
+            JSON.stringify(prevCounters)
+          )
+          const existingCounterIndex = prevCounters.findIndex(
+            (c) => c.id === data.counter!.id
+          )
+          let updatedCounters
+          if (existingCounterIndex !== -1) {
+            updatedCounters = prevCounters.map((counter) =>
+              counter.id === data.counter!.id ? { ...data.counter! } : counter
+            )
+          } else {
+            updatedCounters = [...prevCounters, { ...data.counter! }]
+          }
+          console.log(
+            "[DisplayPage] setCounters: nextCounters:",
+            JSON.stringify(updatedCounters)
           )
           return updatedCounters
         })
       }
 
-      console.log("✅ Queue update processed:", data.type, data.queue.number)
+      console.log(
+        "✅ [DisplayPage] Queue update processed successfully for:",
+        data.type,
+        data.queue.number
+      )
     },
-    [speak, counters]
+    [speak, getQueueUpdateKey]
   )
 
   // Menangani pemanggilan ulang dari server
@@ -505,10 +598,18 @@ export default function DisplayPage() {
       setCurrentTime(new Date())
     }, 1000)
 
+    // Effect to keep countersRef updated
+    countersRef.current = counters
+
     return () => {
       clearInterval(timeInterval)
     }
   }, [])
+
+  // Update countersRef whenever counters state changes
+  useEffect(() => {
+    countersRef.current = counters
+  }, [counters])
 
   // Get queues that are currently called or being served
   const calledQueues = queues.filter(
@@ -689,89 +790,24 @@ export default function DisplayPage() {
                 </div>
 
                 {/* Video */}
-                {(() => {
-                  console.log(
-                    "[DisplayPage] Attempting to render video section..."
-                  )
-                  return null
-                })()}
                 <div className="flex-1 min-h-0">
                   <div className="bg-white rounded-xl lg:rounded-2xl shadow-xl overflow-hidden border border-gray-100 h-full">
                     <div className="h-full p-4">
-                      {(() => {
-                        console.log(
-                          "[DisplayPage:IIFE] Initial videoUrl state:",
-                          videoUrl
-                        )
-                        const currentEmbedUrl = getYouTubeEmbedUrl(videoUrl)
-                        console.log(
-                          "[DisplayPage:IIFE] Processed currentEmbedUrl:",
-                          currentEmbedUrl
-                        )
-
-                        let playlistId = ""
-                        if (
-                          currentEmbedUrl &&
-                          currentEmbedUrl.includes("/embed/")
-                        ) {
-                          playlistId =
-                            currentEmbedUrl
-                              .split("/embed/")[1]
-                              ?.split("?")[0] || ""
-                        }
-                        console.log(
-                          "[DisplayPage:IIFE] Extracted playlistId:",
-                          playlistId
-                        )
-
-                        let iframeSrc = ""
-                        let iframeTitle = "Information Video (Default)"
-
-                        if (!currentEmbedUrl || !playlistId) {
-                          console.log(
-                            "[DisplayPage:IIFE] Fallback condition met. currentEmbedUrl:",
-                            currentEmbedUrl,
-                            "playlistId:",
-                            playlistId
-                          )
-                          const defaultVideoId = "jAQvxW2l-Pg"
-                          iframeSrc = `https://www.youtube.com/embed/${defaultVideoId}?autoplay=1&mute=1&loop=1&playlist=${defaultVideoId}`
-                        } else {
-                          console.log(
-                            "[DisplayPage:IIFE] Using processed URL. currentEmbedUrl:",
-                            currentEmbedUrl,
-                            "playlistId:",
-                            playlistId
-                          )
-                          iframeSrc = `${currentEmbedUrl}${
-                            currentEmbedUrl.includes("?") ? "&" : "?"
-                          }autoplay=1&mute=1&loop=1&playlist=${playlistId}`
-                          iframeTitle = "Information Video"
-                        }
-
-                        console.log(
-                          "[DisplayPage:IIFE] Final iframeSrc to be rendered:",
-                          iframeSrc
-                        )
-
-                        if (!iframeSrc) {
-                          console.error(
-                            "[DisplayPage:IIFE] iframeSrc is empty. Not rendering iframe."
-                          )
-                          return null // Explicitly render nothing if src is empty
-                        }
-
-                        return (
-                          <iframe
-                            src={iframeSrc}
-                            className="w-full h-full rounded-lg"
-                            title={iframeTitle}
-                            frameBorder="0"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                            allowFullScreen
-                          />
-                        )
-                      })()}
+                      {memoizedVideoData.iframeSrc ? (
+                        <iframe
+                          src={memoizedVideoData.iframeSrc}
+                          className="w-full h-full rounded-lg"
+                          title={memoizedVideoData.iframeTitle}
+                          frameBorder="0"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      ) : (
+                        (console.error(
+                          "[DisplayPage] iframeSrc is empty. Not rendering iframe."
+                        ),
+                        null) // Render nothing if src is empty after memoization
+                      )}
                     </div>
                   </div>
                 </div>
