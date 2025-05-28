@@ -666,7 +666,7 @@ export default function DisplayPage() {
                         {/* Institution Text */}
                         <div className="flex-1 text-center sm:text-left">
                           <h1 className="text-lg md:text-xl lg:text-2xl font-bold text-gray-800 mb-1 font-inter">
-                            SPMB Jatim 2025 Hahhaah
+                            SPMB Jatim 2025
                           </h1>
                           <p className="text-base md:text-lg text-gray-600 font-medium">
                             SMAN 10 Surabaya
