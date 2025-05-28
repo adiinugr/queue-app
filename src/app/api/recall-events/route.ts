@@ -74,8 +74,21 @@ export async function POST(request: Request) {
     }
 
     // Emit socket event
-    await emitSocketEvent("recall-event", lastRecallEvent)
-    console.log("Successfully emitted socket recall event")
+    const emitted = await emitSocketEvent("recall-event", lastRecallEvent)
+    if (emitted) {
+      console.log("Successfully emitted socket recall event")
+    } else {
+      console.error(
+        "Failed to emit socket recall event via socket server. Check SOCKET_SERVER_URL and socket server health."
+      )
+      // Consider if this case should return an error response to the caller of /api/recall-events
+      // For example:
+      // return NextResponse.json(
+      //   { error: "Failed to notify clients via socket server" },
+      //   { status: 500 } // Or a different status code like 502 Bad Gateway
+      // );
+      // Keeping original behavior of returning success even if socket emission fails, but logging the error.
+    }
 
     return NextResponse.json({
       success: true,
