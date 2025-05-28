@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
+import { withErrorHandler } from "@/app/api/middleware"
 
-export async function POST(
-  request: NextRequest,
-  // `params` is required for the API route pattern but not used in this implementation
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  { params }: { params: { id: string } }
-) {
-  try {
+export const POST = withErrorHandler(
+  async (
+    request: NextRequest,
+    // `params` is required for the API route pattern but not used in this implementation
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    { params }: { params: { id: string } }
+  ) => {
     // Ambil data dari body request
     const { queueNumber, counterNumber } = await request.json()
 
@@ -44,12 +45,5 @@ export async function POST(
         timestamp: new Date().toISOString()
       }
     })
-  } catch (error: unknown) {
-    console.error("Error recalling queue:", error)
-    const errorMessage =
-      error instanceof Error
-        ? error.message
-        : "Terjadi kesalahan saat memanggil ulang antrean"
-    return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
-}
+)

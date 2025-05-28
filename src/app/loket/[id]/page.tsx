@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import LoadingSpinner from "../../components/LoadingSpinner"
@@ -63,9 +63,6 @@ export default function CounterPage() {
 
   const [completedQueueId, setCompletedQueueId] = useState<string | null>(null)
 
-  const [speechEnabled, setSpeechEnabled] = useState(true)
-  const synthRef = useRef<SpeechSynthesis | null>(null)
-
   // Fungsi untuk mengambil data loket
   const fetchCounter = useCallback(async () => {
     try {
@@ -126,12 +123,6 @@ export default function CounterPage() {
       // Optimistic: update current queue and highlight
       setCounter((prev) => (prev ? { ...prev, currentQueue: data } : prev))
       setJustCalledQueueId(data.id)
-
-      // Announce the queue number
-      if (counter) {
-        const announcement = `Nomor antrian ${data.number}, silakan ke meja ${counter.number}`
-        speak(announcement)
-      }
 
       toast.success(`Nomor antrean ${data.number} berhasil dipanggil!`)
     } catch (err: unknown) {
@@ -243,10 +234,6 @@ export default function CounterPage() {
         throw new Error(data.error || "Gagal memanggil ulang antrean")
       }
 
-      // Announce the recall
-      const announcement = `Panggilan ulang untuk nomor antrian ${counter.currentQueue.number}, silakan ke meja ${counter.number}`
-      speak(announcement)
-
       // Tidak perlu refresh data karena status antrean tidak berubah
     } catch (err: unknown) {
       console.error("Error recalling queue:", err)
@@ -331,11 +318,9 @@ export default function CounterPage() {
   // Use socket.io for real-time updates
   const queueSocketConnected = useQueueUpdates(handleQueueUpdate)
   const counterSocketConnected = useCounterUpdates(handleCounterUpdate)
-  const globalSocketConnected = useSocketConnection()
 
   // Combined connection status
-  const socketConnected =
-    queueSocketConnected || counterSocketConnected || globalSocketConnected
+  const socketConnected = queueSocketConnected || counterSocketConnected
 
   // Fetch initial data and set up real-time updates
   useEffect(() => {
@@ -355,157 +340,6 @@ export default function CounterPage() {
       clearInterval(pollingInterval)
     }
   }, [socketConnected, fetchCounter, fetchQueues])
-
-  // Initialize speech synthesis
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      synthRef.current = window.speechSynthesis
-
-      // Force load voices
-      if (synthRef.current) {
-        // Hack to make sure voices are loaded in Safari/Chrome
-        speechSynthesis.onvoiceschanged = () => {
-          const voices = synthRef.current?.getVoices() || []
-          console.log("Voices loaded:", voices.length, "voices available")
-        }
-
-        // Try to trigger voices load
-        synthRef.current.getVoices()
-      }
-
-      // Load speech preference from localStorage
-      const savedSpeechEnabled = localStorage.getItem("loketSpeechEnabled")
-      if (savedSpeechEnabled === "false") {
-        setSpeechEnabled(false)
-      }
-
-      return () => {
-        if (synthRef.current) {
-          synthRef.current.cancel()
-        }
-      }
-    }
-  }, [])
-
-  // Function to speak text
-  const speak = (text: string) => {
-    try {
-      // Check if speech is enabled
-      if (!speechEnabled) {
-        console.log("⚠️ Speech not enabled. Skipping announcement.")
-        return
-      }
-
-      if (!synthRef.current) {
-        console.error("❌ Speech synthesis not available")
-        toast.error("Pengumuman suara tidak tersedia")
-        return
-      }
-
-      // Check if browser supports speech synthesis
-      if (typeof SpeechSynthesisUtterance === "undefined") {
-        console.error(
-          "❌ SpeechSynthesisUtterance not supported in this browser"
-        )
-        toast.error("Browser Anda tidak mendukung pengumuman suara")
-        return
-      }
-
-      // Check available voices
-      const voices = synthRef.current.getVoices()
-      console.log(`🔊 Available voices: ${voices.length}`)
-
-      // Cancel previous speech if any
-      try {
-        synthRef.current.cancel()
-      } catch {}
-
-      // Create new utterance
-      const utterance = new SpeechSynthesisUtterance(text)
-
-      // Use en-US as default, as it's widely supported
-      utterance.lang = "en-US"
-      utterance.rate = 0.9
-      utterance.volume = 1.0
-
-      // Try to find appropriate voice
-      if (voices.length > 0) {
-        // Get default voice
-        const defaultVoice = voices.find((voice) => voice.default) || voices[0]
-        utterance.voice = defaultVoice
-
-        // Try to find a matching voice (but still use default if unsuccessful)
-        const indonesianVoice = voices.find((voice) => voice.lang === "id-ID")
-        if (indonesianVoice) {
-          utterance.voice = indonesianVoice
-          utterance.lang = "id-ID"
-        } else {
-          // Try to find a female voice
-          const femaleVoice = voices.find((voice) =>
-            voice.name.toLowerCase().includes("female")
-          )
-          if (femaleVoice) {
-            utterance.voice = femaleVoice
-          }
-        }
-      }
-
-      // Debug
-      console.log(
-        `🔊 Will speak using voice: ${
-          utterance.voice?.name || "default browser voice"
-        }`
-      )
-
-      // Add event handlers for debugging
-      utterance.onstart = () => {
-        try {
-          console.log("🔊 Speech started")
-        } catch {}
-      }
-
-      utterance.onend = () => {
-        try {
-          console.log("🔊 Speech ended")
-        } catch {}
-      }
-
-      utterance.onerror = (event) => {
-        try {
-          console.error("❌ Speech error:", event || "Empty error object")
-          // Only show toast for certain errors
-          if (event && event.error && event.error !== "canceled") {
-            toast.error(`Gagal mengucapkan pengumuman: ${event.error}`)
-          }
-        } catch {}
-      }
-
-      // Speak the text with error handling
-      try {
-        // Safari fix: cancel any ongoing speech first
-        if (synthRef.current) {
-          synthRef.current.cancel()
-
-          // Small delay to ensure cancel completes
-          setTimeout(() => {
-            try {
-              synthRef.current?.speak(utterance)
-            } catch (e) {
-              console.error("Error during speech synthesis:", e)
-              toast.error("Terjadi kesalahan saat pengumuman")
-            }
-          }, 100)
-        }
-      } catch (e) {
-        console.error("Error during speech synthesis:", e)
-        toast.error("Terjadi kesalahan saat pengumuman")
-      }
-    } catch (error) {
-      // Catch any other errors
-      console.error("❌ Global error in speak function:", error)
-      toast.error("Terjadi kesalahan dalam sistem pengumuman suara")
-    }
-  }
 
   if (loading) {
     return <LoadingSpinner fullScreen message="Memuat data loket..." />
@@ -638,52 +472,6 @@ export default function CounterPage() {
               Loket <span className="text-rose-600">{counter.number}</span>:{" "}
               {counter.name}
             </h1>
-            <div className="mt-2">
-              <button
-                onClick={() => {
-                  setSpeechEnabled(!speechEnabled)
-                  localStorage.setItem(
-                    "loketSpeechEnabled",
-                    (!speechEnabled).toString()
-                  )
-                  toast.success(
-                    speechEnabled ? "Suara dinonaktifkan" : "Suara diaktifkan"
-                  )
-                }}
-                className={`inline-flex items-center rounded-md px-3 py-1.5 text-sm font-inter ${
-                  speechEnabled
-                    ? "bg-rose-100 text-rose-800"
-                    : "bg-gray-100 text-gray-800"
-                }`}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className={`h-4 w-4 mr-1 ${
-                    speechEnabled ? "text-rose-600" : "text-gray-600"
-                  }`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  {speechEnabled ? (
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                    />
-                  ) : (
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                    />
-                  )}
-                </svg>
-                {speechEnabled ? "Suara Aktif" : "Suara Nonaktif"}
-              </button>
-            </div>
           </div>
 
           {error && (

@@ -77,6 +77,9 @@ export default function DisplayPage() {
   const countersRef = useRef<Counter[]>(counters) // Ref for counters
 
   const [speechEnabled, setSpeechEnabled] = useState(false)
+  const [announcementToMake, setAnnouncementToMake] = useState<string | null>(
+    null
+  )
   const [videoUrl, setVideoUrl] = useState<string>(() =>
     getYouTubeEmbedUrl("https://www.youtube.com/embed/jAQvxW2l-Pg")
   ) // Default video, processed
@@ -154,9 +157,29 @@ export default function DisplayPage() {
   // Fungsi untuk mengucapkan teks - wrapped in useCallback
   const speak = useCallback(
     (text: string) => {
+      let currentSpeechEnabled = speechEnabled
+      // If internal state says false, check localStorage as a fallback
+      // This helps if speak() is called before the state re-render fully propagates
+      if (!currentSpeechEnabled) {
+        const storedState = localStorage.getItem("speechEnabled")
+        if (storedState === "true") {
+          console.log(
+            "🎤 [DisplayPage] speak(): Overriding speechEnabled from localStorage"
+          )
+          currentSpeechEnabled = true
+        }
+      }
+
+      console.log(
+        "🎤 [DisplayPage] speak() called with text:",
+        text,
+        "Effective Speech enabled:", // Changed log to reflect effective state
+        currentSpeechEnabled
+      )
       try {
         // Check if speech is enabled by user first
-        if (!speechEnabled) {
+        if (!currentSpeechEnabled) {
+          // Use currentSpeechEnabled here
           console.log(
             "⚠️ Speech not enabled by user yet. Skipping announcement."
           )
@@ -207,12 +230,29 @@ export default function DisplayPage() {
 
         // Get available voices safely
         let voices: SpeechSynthesisVoice[] = []
-        try {
-          voices = window.speechSynthesis.getVoices() || []
-          console.log(`🔊 Available voices: ${voices.length}`)
-        } catch (e) {
-          console.error("Error getting voices:", e)
+        if (typeof window !== "undefined" && window.speechSynthesis) {
+          console.log("🎤 [DisplayPage] speak(): Attempting to get voices...")
+          voices = window.speechSynthesis.getVoices()
+          console.log(
+            `🔊 [DisplayPage] speak(): Initial voices.length: ${voices.length}`
+          )
+
+          if (voices.length === 0) {
+            console.warn(
+              "⚠️ [DisplayPage] speak(): No voices loaded on first call to getVoices(). This might result in default (English) voice if id-ID is not found among zero voices."
+            )
+            // Some browsers load voices asynchronously. A robust solution uses 'onvoiceschanged' event.
+            // For this attempt, we'll log and proceed, relying on subsequent calls to have voices.
+          }
+        } else {
+          console.error(
+            "❌ [DisplayPage] speak(): Speech synthesis not available for getting voices."
+          )
         }
+
+        console.log(
+          `🎤 [DisplayPage] speak(): Total voices found for selection: ${voices.length}`
+        )
 
         // Gunakan suara default browser jika tidak ada yang cocok
         // Coba berbagai suara jika tersedia
@@ -220,22 +260,46 @@ export default function DisplayPage() {
           // Ambil voice default
           const defaultVoice =
             voices.find((voice) => voice.default) || voices[0]
-          utterance.voice = defaultVoice
+          utterance.voice = defaultVoice // Start with default
+
+          console.log(
+            `🎤 [DisplayPage] speak(): Default voice set to: ${defaultVoice?.name} (lang: ${defaultVoice?.lang})`
+          )
 
           // Coba cari suara yang cocok (tapi tetap gunakan default jika gagal)
           const indonesianVoice = voices.find((voice) => voice.lang === "id-ID")
           if (indonesianVoice) {
             utterance.voice = indonesianVoice
             utterance.lang = "id-ID"
+            console.log(
+              "👍 [DisplayPage] speak(): Indonesian voice selected:",
+              indonesianVoice.name
+            )
           } else {
+            console.warn(
+              "⚠️ [DisplayPage] speak(): Indonesian (id-ID) voice not found. Current lang is 'en-US'. Trying female voice."
+            )
             // Coba cari voice female
             const femaleVoice = voices.find((voice) =>
               voice.name.toLowerCase().includes("female")
             )
             if (femaleVoice) {
               utterance.voice = femaleVoice
+              console.log(
+                "👍 [DisplayPage] speak(): Female voice selected as fallback:",
+                femaleVoice.name
+              )
+            } else {
+              console.warn(
+                "⚠️ [DisplayPage] speak(): Female voice not found. Using previously set default voice:",
+                utterance.voice?.name
+              )
             }
           }
+        } else {
+          console.warn(
+            "⚠️ [DisplayPage] speak(): No voices available in the list. Utterance will use browser's default mechanism for lang 'en-US'."
+          )
         }
 
         // Debug
@@ -316,6 +380,14 @@ export default function DisplayPage() {
     [speechEnabled]
   )
 
+  // Add the useEffect for deferred announcement
+  useEffect(() => {
+    if (announcementToMake && speechEnabled) {
+      speak(announcementToMake)
+      setAnnouncementToMake(null) // Clear after speaking
+    }
+  }, [announcementToMake, speechEnabled, speak]) // Dependencies for the effect
+
   // Menangani pembaruan antrean dari server
   const handleQueueUpdate = useCallback(
     (data: QueueUpdateData) => {
@@ -329,9 +401,8 @@ export default function DisplayPage() {
         data.queue.id,
         data.timestamp || Date.now()
       )
-      // console.log(`[DisplayPage] Generated updateKey: ${updateKey}`); // Commented out
+      // console.log(`[DisplayPage] Generated updateKey: ${updateKey}`);
 
-      // Check if we've already processed this exact update
       if (processedQueueUpdatesRef.current.has(updateKey)) {
         // console.log(
         //   "⏩ [DisplayPage] Skipping duplicate queue update:",
@@ -339,12 +410,10 @@ export default function DisplayPage() {
         // );
         return
       }
-      // console.log("[DisplayPage] New update, processing..."); // Optional: keep if you want to see non-duplicate processing
+      // console.log("[DisplayPage] New update, processing...");
 
-      // Mark this update as processed
       processedQueueUpdatesRef.current.add(updateKey)
 
-      // Clean up old processed updates (keep only last 50)
       if (processedQueueUpdatesRef.current.size > 50) {
         const entries = Array.from(processedQueueUpdatesRef.current)
         entries.slice(0, 25).forEach((key) => {
@@ -352,20 +421,24 @@ export default function DisplayPage() {
         })
       }
 
-      if (data.type === "CALLED") {
+      if (data.type === "QUEUE_CALLED") {
         console.log(
-          "[DisplayPage] Update type is CALLED. Checking if announced..."
+          "🎤 [DisplayPage] handleQueueUpdate: Event type is QUEUE_CALLED.",
+          data
         )
         if (!announcedQueueIdsRef.current.has(data.queue.id)) {
           console.log(
-            `[DisplayPage] Queue ${data.queue.id} not announced yet. Attempting to find counter.`
+            `🎤 [DisplayPage] handleQueueUpdate: Queue ${data.queue.id} not announced yet. Attempting to find counter.`
           )
           const counter = countersRef.current.find(
             (c) => c.id === data.queue.counterServingId
           )
           if (counter) {
             const announcement = `Nomor antrean ${data.queue.number} silakan menuju meja ${counter.number}`
-            console.log("[DisplayPage] Announcing:", announcement)
+            console.log(
+              "🎤 [DisplayPage] handleQueueUpdate: Announcing:",
+              announcement
+            )
             speak(announcement)
             announcedQueueIdsRef.current.add(data.queue.id)
             if (announcedQueueIdsRef.current.size > 20) {
@@ -376,14 +449,17 @@ export default function DisplayPage() {
             }
           } else {
             console.warn(
-              "[DisplayPage] Counter not found for CALLED queue:",
+              "🎤 [DisplayPage] handleQueueUpdate: Counter not found for QUEUE_CALLED queue:",
               data.queue.counterServingId,
               "Available counters:",
               countersRef.current
             )
           }
         } else {
-          console.log("[DisplayPage] Queue already announced:", data.queue.id)
+          console.log(
+            "🎤 [DisplayPage] handleQueueUpdate: Queue already announced:",
+            data.queue.id
+          )
         }
       }
 
@@ -476,10 +552,14 @@ export default function DisplayPage() {
   // Menangani pemanggilan ulang dari server
   const handleRecallEvent = useCallback(
     (data: RecallEventData) => {
-      console.log("📢 Received recall event:", data)
+      console.log("🎤 [DisplayPage] handleRecallEvent received:", data)
 
       // Speak the recall announcement
       const announcement = `Pemanggilan ulang, nomor antrean ${data.queueNumber} silakan menuju meja ${data.counterNumber}`
+      console.log(
+        "🎤 [DisplayPage] handleRecallEvent: Announcing:",
+        announcement
+      )
       speak(announcement)
 
       // Show toast notification
@@ -829,15 +909,24 @@ export default function DisplayPage() {
       {/* Speech Control Button - Hidden but functional */}
       <button
         onClick={() => {
-          setSpeechEnabled(!speechEnabled)
-          localStorage.setItem("speechEnabled", (!speechEnabled).toString())
-          toast.success(
-            speechEnabled ? "Suara dinonaktifkan" : "Suara diaktifkan"
-          )
+          const newSpeechEnabled = !speechEnabled
+          setSpeechEnabled(newSpeechEnabled)
+          localStorage.setItem("speechEnabled", newSpeechEnabled.toString())
+          if (newSpeechEnabled) {
+            // If turning on speech
+            console.log("🎤 [DisplayPage] Speech explicitly enabled by user.")
+            setAnnouncementToMake("Pengumuman suara diaktifkan") // Defer announcement
+          } else {
+            if (synthRef.current) synthRef.current.cancel() // Stop any ongoing speech
+            toast.success("Suara dinonaktifkan")
+            setAnnouncementToMake(null) // Clear any pending announcement if disabling
+          }
         }}
-        className="fixed bottom-4 right-4 w-0 h-0 opacity-0 pointer-events-none"
+        className="fixed bottom-4 right-4 bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full z-50 shadow-lg"
         aria-label="Toggle speech"
-      />
+      >
+        {speechEnabled ? "Matikan Suara" : "Aktifkan Suara"}
+      </button>
     </div>
   )
 }
