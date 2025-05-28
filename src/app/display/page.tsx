@@ -693,7 +693,16 @@ export default function DisplayPage() {
                   <div className="bg-white rounded-xl lg:rounded-2xl shadow-xl overflow-hidden border border-gray-100 h-full">
                     <div className="h-full p-4">
                       {(() => {
+                        console.log(
+                          "[DisplayPage:IIFE] Initial videoUrl state:",
+                          videoUrl
+                        )
                         const currentEmbedUrl = getYouTubeEmbedUrl(videoUrl)
+                        console.log(
+                          "[DisplayPage:IIFE] Processed currentEmbedUrl:",
+                          currentEmbedUrl
+                        )
+
                         let playlistId = ""
                         if (
                           currentEmbedUrl &&
@@ -704,14 +713,30 @@ export default function DisplayPage() {
                               .split("/embed/")[1]
                               ?.split("?")[0] || ""
                         }
+                        console.log(
+                          "[DisplayPage:IIFE] Extracted playlistId:",
+                          playlistId
+                        )
 
                         let iframeSrc = ""
                         let iframeTitle = "Information Video (Default)"
 
                         if (!currentEmbedUrl || !playlistId) {
+                          console.log(
+                            "[DisplayPage:IIFE] Fallback condition met. currentEmbedUrl:",
+                            currentEmbedUrl,
+                            "playlistId:",
+                            playlistId
+                          )
                           const defaultVideoId = "jAQvxW2l-Pg"
                           iframeSrc = `https://www.youtube.com/embed/${defaultVideoId}?autoplay=1&mute=1&loop=1&playlist=${defaultVideoId}`
                         } else {
+                          console.log(
+                            "[DisplayPage:IIFE] Using processed URL. currentEmbedUrl:",
+                            currentEmbedUrl,
+                            "playlistId:",
+                            playlistId
+                          )
                           iframeSrc = `${currentEmbedUrl}${
                             currentEmbedUrl.includes("?") ? "&" : "?"
                           }autoplay=1&mute=1&loop=1&playlist=${playlistId}`
@@ -719,9 +744,16 @@ export default function DisplayPage() {
                         }
 
                         console.log(
-                          "[DisplayPage] Rendering iframe with src:",
+                          "[DisplayPage:IIFE] Final iframeSrc to be rendered:",
                           iframeSrc
-                        ) // Log the src
+                        )
+
+                        if (!iframeSrc) {
+                          console.error(
+                            "[DisplayPage:IIFE] iframeSrc is empty. Not rendering iframe."
+                          )
+                          return null // Explicitly render nothing if src is empty
+                        }
 
                         return (
                           <iframe
