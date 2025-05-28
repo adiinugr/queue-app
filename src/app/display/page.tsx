@@ -642,23 +642,23 @@ export default function DisplayPage() {
                         {/* Logos */}
                         <div className="flex items-center space-x-3">
                           {/* SMAN 10 Surabaya Logo */}
-                          <div className="w-12 h-12 md:w-16 md:h-16 flex items-center justify-center bg-white rounded-lg shadow-md p-1.5">
+                          <div className="relative w-12 h-12 md:w-16 md:h-16 flex items-center justify-center bg-white rounded-lg shadow-md p-1.5">
                             <Image
                               src="https://www.dbl.id/uploads/school/13138/810-SMAN_10_SURABAYA.png"
                               alt="SMAN 10 Surabaya"
-                              width={24}
-                              height={24}
-                              className="w-full h-full object-contain"
+                              fill
+                              sizes="(max-width: 768px) 48px, 64px"
+                              className="object-contain"
                             />
                           </div>
                           {/* Dinas Pendidikan Jatim Logo */}
-                          <div className="w-12 h-12 md:w-16 md:h-16 flex items-center justify-center bg-white rounded-lg shadow-md p-1.5">
+                          <div className="relative w-12 h-12 md:w-16 md:h-16 flex items-center justify-center bg-white rounded-lg shadow-md p-1.5">
                             <Image
                               src="https://spmbjatim.net/images/logo.png"
                               alt="Dinas Pendidikan Jatim"
-                              width={24}
-                              height={24}
-                              className="w-full h-full object-contain"
+                              fill
+                              sizes="(max-width: 768px) 48px, 64px"
+                              className="object-contain"
                             />
                           </div>
                         </div>
