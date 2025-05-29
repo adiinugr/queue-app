@@ -21,7 +21,7 @@ export const POST = withErrorHandler(
 
     // Kirim data recall ke endpoint recall-events untuk memicu pengumuman suara
     const recallResponse = await fetch(
-      `${request.nextUrl.origin}/api/recall-events`,
+      `${process.env.CLIENT_URL}/api/recall-events`,
       {
         method: "POST",
         headers: {
