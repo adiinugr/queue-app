@@ -1,15 +1,26 @@
 import { NextResponse } from "next/server"
+// No https import needed if not using custom agent directly with fetch like that
+
+// Define a type for errors that might have a 'cause' property
+interface FetchError extends Error {
+  cause?: unknown
+}
 
 // Function to emit socket event
 async function emitSocketEvent(
   eventType: string,
   eventData: Record<string, unknown>
 ) {
-  try {
-    const socketServerUrl =
-      process.env.SOCKET_SERVER_URL || "http://localhost:3001"
+  const socketServerUrl =
+    process.env.SOCKET_SERVER_URL || "http://localhost:3001"
+  const targetUrl = `${socketServerUrl}/api/emit`
 
-    const response = await fetch(`${socketServerUrl}/api/emit`, {
+  console.log(
+    `[emitSocketEvent] Attempting to POST to: ${targetUrl} for eventType: ${eventType}`
+  )
+
+  try {
+    const response = await fetch(targetUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -20,14 +31,42 @@ async function emitSocketEvent(
       })
     })
 
+    console.log(
+      `[emitSocketEvent] Response status for ${eventType}: ${response.status}, statusText: ${response.statusText}`
+    )
+
     if (!response.ok) {
-      console.error(`Failed to emit socket event: ${response.statusText}`)
+      let errorBody = "[Could not read error body]"
+      try {
+        errorBody = await response.text()
+      } catch (bodyError: unknown) {
+        console.error(
+          `[emitSocketEvent] Error trying to read error body for ${eventType}:`,
+          bodyError instanceof Error ? bodyError.message : bodyError
+        )
+      }
+      console.error(
+        `[emitSocketEvent] Failed to emit socket event ${eventType} to ${targetUrl}: ${response.status} ${response.statusText}. Body: ${errorBody}`
+      )
       return false
     }
 
+    console.log(
+      `[emitSocketEvent] Successfully emitted socket event ${eventType} via POST to ${targetUrl}.`
+    )
     return true
-  } catch (error) {
-    console.error("Error emitting socket event:", error)
+  } catch (error: unknown) {
+    const fetchError = error as FetchError
+    console.error(
+      `[emitSocketEvent] Network or other error emitting socket event ${eventType} to ${targetUrl}:`,
+      fetchError.message
+    )
+    if (fetchError.cause) {
+      console.error(
+        `[emitSocketEvent] Underlying cause for ${eventType}:`,
+        fetchError.cause
+      )
+    }
     return false
   }
 }
@@ -45,8 +84,9 @@ export async function GET() {
       success: true,
       event: lastRecallEvent.timestamp ? lastRecallEvent : null
     })
-  } catch (error) {
-    console.error("Error fetching recall events:", error)
+  } catch (error: unknown) {
+    const genericError = error as Error
+    console.error("Error fetching recall events:", genericError.message)
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -66,37 +106,38 @@ export async function POST(request: Request) {
       )
     }
 
-    // Update the last recall event
-    lastRecallEvent = {
+    const currentRecallEvent = {
       queueNumber,
       counterNumber,
       timestamp: new Date().toISOString()
     }
+    lastRecallEvent = currentRecallEvent
 
-    // Emit socket event
-    const emitted = await emitSocketEvent("recall-event", lastRecallEvent)
+    const emitted = await emitSocketEvent("recall-event", currentRecallEvent)
     if (emitted) {
-      console.log("Successfully emitted socket recall event")
+      // Successfully logged within emitSocketEvent
     } else {
       console.error(
-        "Failed to emit socket recall event via socket server. Check SOCKET_SERVER_URL and socket server health."
+        "[recall-events POST] emitSocketEvent returned false. Failed to emit socket recall event. Check logs from emitSocketEvent for details."
       )
-      // Consider if this case should return an error response to the caller of /api/recall-events
-      // For example:
-      // return NextResponse.json(
-      //   { error: "Failed to notify clients via socket server" },
-      //   { status: 500 } // Or a different status code like 502 Bad Gateway
-      // );
-      // Keeping original behavior of returning success even if socket emission fails, but logging the error.
+      // Consider returning an actual error to the client of this API route
+      // return NextResponse.json({ error: "Failed to broadcast recall event" }, { status: 502 }); // Example
     }
 
     return NextResponse.json({
       success: true,
       message: "Recall event recorded successfully",
-      event: lastRecallEvent
+      event: currentRecallEvent
     })
-  } catch (error) {
-    console.error("Error handling recall event:", error)
+  } catch (error: unknown) {
+    const postError = error as FetchError
+    console.error(
+      "[recall-events POST] Error handling recall event (e.g., JSON parsing):",
+      postError.message
+    )
+    if (postError.cause) {
+      console.error("[recall-events POST] Underlying cause:", postError.cause)
+    }
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
