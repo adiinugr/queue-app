@@ -91,7 +91,7 @@ export default function AdminPage() {
       }
     } catch (err) {
       console.error("Error fetching counters:", err)
-      setError("Gagal memuat data meja")
+      setError("Gagal memuat data operator")
     }
   }, [])
 
@@ -188,13 +188,13 @@ export default function AdminPage() {
     }
   }
 
-  // Membuat meja baru
+  // Membuat operator baru
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const createCounter = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!newCounter.name.trim()) {
-      toast.error("Nama meja tidak boleh kosong")
+      toast.error("Nama operator tidak boleh kosong")
       return
     }
 
@@ -211,15 +211,15 @@ export default function AdminPage() {
         setNewCounter({ name: "", number: 0 })
         await fetchCounters()
         setError(null)
-        toast.success("Meja berhasil ditambahkan")
+        toast.success("Operator berhasil ditambahkan")
       } else {
         const data = await response.json()
-        throw new Error(data.error || "Gagal membuat meja")
+        throw new Error(data.error || "Gagal membuat operator")
       }
     } catch (err: unknown) {
       console.error("Error creating counter:", err)
       const errorMessage =
-        err instanceof Error ? err.message : "Gagal membuat meja"
+        err instanceof Error ? err.message : "Gagal membuat operator"
       setError(errorMessage)
       toast.error(errorMessage)
     }
@@ -284,14 +284,14 @@ export default function AdminPage() {
     }
   }
 
-  // Edit meja
+  // Edit operator
   const updateCounter = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!editingCounter) return
 
     if (!editingCounter.name.trim()) {
-      toast.error("Nama meja tidak boleh kosong")
+      toast.error("Nama operator tidak boleh kosong")
       return
     }
 
@@ -310,23 +310,23 @@ export default function AdminPage() {
       if (response.ok) {
         await fetchCounters()
         setEditingCounter(null)
-        toast.success("Meja berhasil diperbarui")
+        toast.success("Operator berhasil diperbarui")
       } else {
         const data = await response.json()
-        throw new Error(data.error || "Gagal memperbarui meja")
+        throw new Error(data.error || "Gagal memperbarui operator")
       }
     } catch (err: unknown) {
       console.error("Error updating counter:", err)
       const errorMessage =
-        err instanceof Error ? err.message : "Gagal memperbarui meja"
+        err instanceof Error ? err.message : "Gagal memperbarui operator"
       setError(errorMessage)
       toast.error(errorMessage)
     }
   }
 
-  // Hapus meja
+  // Hapus operator
   const deleteCounter = async (id: string) => {
-    if (!confirm("Anda yakin ingin menghapus meja ini?")) return
+    if (!confirm("Anda yakin ingin menghapus operator ini?")) return
 
     try {
       const response = await fetch(`/api/counters/${id}`, {
@@ -338,15 +338,15 @@ export default function AdminPage() {
 
       if (response.ok) {
         await fetchCounters()
-        toast.success("Meja berhasil dihapus")
+        toast.success("Operator berhasil dihapus")
       } else {
         const data = await response.json()
-        throw new Error(data.error || "Gagal menghapus meja")
+        throw new Error(data.error || "Gagal menghapus operator")
       }
     } catch (err: unknown) {
       console.error("Error deleting counter:", err)
       const errorMessage =
-        err instanceof Error ? err.message : "Gagal menghapus meja"
+        err instanceof Error ? err.message : "Gagal menghapus operator"
       setError(errorMessage)
       toast.error(errorMessage)
     }
@@ -656,7 +656,7 @@ export default function AdminPage() {
                           htmlFor="allowSimultaneous"
                           className="ml-3 block text-sm text-gray-700"
                         >
-                          Izinkan meja memanggil antrian bersamaan
+                          Izinkan operator memanggil antrian bersamaan
                         </label>
                       </div>
                     </div>
@@ -697,7 +697,7 @@ export default function AdminPage() {
                       />
                     </svg>
                   </div>
-                  Manajemen Meja
+                  Manajemen Operator
                 </h2>
 
                 <div className="space-y-6 font-inter">
@@ -707,7 +707,7 @@ export default function AdminPage() {
                   >
                     <div>
                       <label className="block text-sm font-medium text-gray-700">
-                        Nama Meja
+                        Nama Operator
                       </label>
                       <input
                         type="text"
@@ -719,12 +719,12 @@ export default function AdminPage() {
                           })
                         }
                         className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 shadow-sm focus:border-rose-600 focus:outline-none focus:ring-rose-600 sm:text-sm text-gray-900 placeholder-gray-500"
-                        placeholder="Masukkan nama meja"
+                        placeholder="Masukkan nama operator"
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">
-                        Nomor Meja
+                        Nomor Operator
                       </label>
                       <input
                         type="number"
@@ -733,7 +733,7 @@ export default function AdminPage() {
                           const value = e.target.value
 
                           if (value === "") {
-                            toast.error("Nomor meja tidak boleh kosong")
+                            toast.error("Nomor operator tidak boleh kosong")
                             setNewCounter({
                               ...newCounter,
                               number: 0
@@ -743,7 +743,7 @@ export default function AdminPage() {
 
                           const parsedValue = parseInt(value)
                           if (isNaN(parsedValue)) {
-                            toast.error("Nomor meja harus berupa angka")
+                            toast.error("Nomor operator harus berupa angka")
                             return
                           }
 
@@ -753,7 +753,7 @@ export default function AdminPage() {
                           })
                         }}
                         className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 shadow-sm focus:border-rose-600 focus:outline-none focus:ring-rose-600 sm:text-sm text-gray-900 placeholder-gray-500"
-                        placeholder="Masukkan nomor meja"
+                        placeholder="Masukkan nomor operator"
                       />
                     </div>
                     <div>
@@ -761,25 +761,25 @@ export default function AdminPage() {
                         type="submit"
                         className="rounded-lg bg-rose-600 px-5 py-2.5 font-medium text-white shadow-sm hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-600 focus:ring-offset-2 transition-all duration-200"
                       >
-                        Tambah Meja
+                        Tambah Operator
                       </button>
                     </div>
                   </form>
 
                   <div className="space-y-4">
                     <h3 className="text-lg font-medium text-gray-900">
-                      Daftar Meja
+                      Daftar Operator
                     </h3>
 
                     {editingCounter ? (
                       <div className="border border-rose-200 bg-rose-50 p-4 rounded-lg mb-4">
                         <h4 className="font-medium text-gray-900 mb-3">
-                          Edit Meja
+                          Edit Operator
                         </h4>
                         <form onSubmit={updateCounter} className="space-y-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700">
-                              Nama Meja
+                              Nama Operator
                             </label>
                             <input
                               type="text"
@@ -791,12 +791,12 @@ export default function AdminPage() {
                                 })
                               }
                               className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 shadow-sm focus:border-rose-600 focus:outline-none focus:ring-rose-600 sm:text-sm text-gray-900 placeholder-gray-500"
-                              placeholder="Masukkan nama meja"
+                              placeholder="Masukkan nama operator"
                             />
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700">
-                              Nomor Meja
+                              Nomor Operator
                             </label>
                             <input
                               type="number"
@@ -805,7 +805,9 @@ export default function AdminPage() {
                                 const value = e.target.value
 
                                 if (value === "") {
-                                  toast.error("Nomor meja tidak boleh kosong")
+                                  toast.error(
+                                    "Nomor operator tidak boleh kosong"
+                                  )
                                   setEditingCounter({
                                     ...editingCounter,
                                     number: 0
@@ -815,7 +817,9 @@ export default function AdminPage() {
 
                                 const parsedValue = parseInt(value)
                                 if (isNaN(parsedValue)) {
-                                  toast.error("Nomor meja harus berupa angka")
+                                  toast.error(
+                                    "Nomor operator harus berupa angka"
+                                  )
                                   return
                                 }
 
@@ -825,7 +829,7 @@ export default function AdminPage() {
                                 })
                               }}
                               className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 shadow-sm focus:border-rose-600 focus:outline-none focus:ring-rose-600 sm:text-sm text-gray-900 placeholder-gray-500"
-                              placeholder="Masukkan nomor meja"
+                              placeholder="Masukkan nomor operator"
                             />
                           </div>
                           <div className="flex space-x-2">
@@ -903,7 +907,7 @@ export default function AdminPage() {
                                   target="_blank"
                                   href={`/loket/${counter.id}`}
                                   className="inline-flex items-center rounded-lg border border-rose-300 bg-rose-50 p-2 text-sm font-medium text-rose-700 shadow-sm hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-600 focus:ring-offset-2 transition-all duration-200"
-                                  title="Buka Halaman Meja"
+                                  title="Buka Halaman Operator"
                                 >
                                   <svg
                                     xmlns="http://www.w3.org/2000/svg"
@@ -988,10 +992,10 @@ export default function AdminPage() {
                           />
                         </svg>
                         <p className="text-gray-500 font-inter">
-                          Belum ada meja
+                          Belum ada operator
                         </p>
                         <p className="text-sm text-gray-400 mt-1">
-                          Tambahkan meja baru menggunakan form di atas
+                          Tambahkan operator baru menggunakan form di atas
                         </p>
                       </div>
                     )}
@@ -1103,7 +1107,7 @@ export default function AdminPage() {
                                         d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
                                       />
                                     </svg>
-                                    Meja{" "}
+                                    Operator{" "}
                                     {
                                       counters.find(
                                         (c) => c.id === queue.counterServingId

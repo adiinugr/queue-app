@@ -434,7 +434,7 @@ export default function DisplayPage() {
             (c) => c.id === data.queue.counterServingId
           )
           if (counter) {
-            const announcement = `Nomor antrean ${data.queue.number} silakan menuju meja ${counter.number}`
+            const announcement = `Nomor antrean ${data.queue.number} silakan menuju operator ${counter.number}`
             console.log(
               "🎤 [DisplayPage] handleQueueUpdate: Announcing:",
               announcement
@@ -449,9 +449,9 @@ export default function DisplayPage() {
             }
           } else {
             console.warn(
-              "🎤 [DisplayPage] handleQueueUpdate: Counter not found for QUEUE_CALLED queue:",
+              "🎤 [DisplayPage] handleQueueUpdate: Operator not found for QUEUE_CALLED queue:",
               data.queue.counterServingId,
-              "Available counters:",
+              "Available operators:",
               countersRef.current
             )
           }
@@ -555,12 +555,12 @@ export default function DisplayPage() {
       console.log("🎤 [DisplayPage] handleRecallEvent received:", data)
 
       // Speak the recall announcement
-      const announcement = `Pemanggilan ulang, nomor antrean ${data.queueNumber} silakan menuju meja ${data.counterNumber}`
+      const recallAnnouncement = `Pemanggilan ulang, nomor antrean ${data.queueNumber} silakan menuju operator ${data.counterNumber}`
       console.log(
         "🎤 [DisplayPage] handleRecallEvent: Announcing:",
-        announcement
+        recallAnnouncement
       )
-      speak(announcement)
+      speak(recallAnnouncement)
 
       // Show toast notification
       toast(`Pemanggilan ulang untuk nomor ${data.queueNumber}`)
@@ -700,13 +700,13 @@ export default function DisplayPage() {
     return <LoadingSpinner fullScreen message="Memuat tampilan antrean..." />
   }
 
-  // Ensure we have exactly 8 meja for display
+  // Ensure we have exactly 8 operators for display
   const displayCounters = Array.from({ length: 8 }, (_, index) => {
     const existingCounter = counters.find((c) => c.number === index + 1)
     return (
       existingCounter || {
         id: `placeholder-${index + 1}`,
-        name: `Meja ${index + 1}`,
+        name: `Operator ${index + 1}`,
         number: index + 1,
         isActive: false
       }
@@ -719,13 +719,13 @@ export default function DisplayPage() {
 
       {/* Main Container */}
       <div className="h-full p-3 md:p-4 lg:p-6">
-        {/* Main Layout - Left: Meja Cards, Right: Institution Info & Video */}
+        {/* Main Layout - Left: Operator Cards, Right: Institution Info & Video */}
         <div className="h-full">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-4 lg:gap-6 h-full">
-            {/* Left - Meja Cards */}
+            {/* Left - Operator Cards */}
             <div className="lg:col-span-6 order-2 lg:order-1">
               <div className="bg-white rounded-xl lg:rounded-2xl shadow-xl border border-gray-100 h-full">
-                {/* Meja Grid - Always 2 columns, 4 rows */}
+                {/* Operator Grid - Always 2 columns, 4 rows */}
                 <div className="grid grid-cols-2 grid-rows-4 gap-2 md:gap-3 lg:gap-4 p-4 h-full">
                   {displayCounters.map((counter) => {
                     const activeQueue = calledQueues.find(
@@ -761,7 +761,7 @@ export default function DisplayPage() {
                         >
                           <div className="absolute inset-0 bg-white opacity-10 rounded-t-lg lg:rounded-t-xl"></div>
                           <span className="relative">
-                            MEJA {counter.number}
+                            OPERATOR {counter.number}
                           </span>
                         </div>
 
