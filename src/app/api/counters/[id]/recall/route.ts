@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { withErrorHandler } from "@/app/api/middleware"
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4010"
+const SOCKET_URL = process.env.SOCKET_SERVER_URL || "http://localhost:4010"
 
 // POST /api/counters/[id]/recall - Panggil ulang antrean
 export const POST = withErrorHandler(

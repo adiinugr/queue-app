@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma"
 import { withErrorHandler } from "@/app/api/middleware"
 import { Prisma } from "@prisma/client"
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4010"
+const SOCKET_URL = process.env.SOCKET_SERVER_URL || "http://localhost:4010"
 
 async function emitSocketEvent(eventType: string, eventData: object) {
   try {

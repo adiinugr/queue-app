@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { withErrorHandlerNoReq } from "../../middleware"
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4010"
+const SOCKET_URL = process.env.SOCKET_SERVER_URL || "http://localhost:4010"
 
 // POST /api/queues/reset - Mereset semua antrean hari ini
 export const POST = withErrorHandlerNoReq(async () => {
