@@ -1,7 +1,6 @@
 import { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Queue System - Admin Panel",
-  description:
-    "Manage your queue settings, counters and monitor queue operations through this admin control panel"
+  title: "Admin Panel",
+  description: "Panel Admin - Aplikasi Antrian SPMB Jatim Tahun 2026 SMAN 10 Surabaya"
 }

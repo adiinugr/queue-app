@@ -2,29 +2,16 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { withErrorHandler } from "../../middleware"
 
-// Function to emit socket event
-async function emitSocketEvent(eventType: string, eventData: any) {
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4010"
+
+async function emitSocketEvent(eventType: string, eventData: object) {
   try {
-    const socketServerUrl =
-      process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
-
-    const response = await fetch(`${socketServerUrl}/api/emit`, {
+    const response = await fetch(`${SOCKET_URL}/api/emit`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        eventType,
-        eventData
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventType, eventData })
     })
-
-    if (!response.ok) {
-      console.error(`Failed to emit socket event: ${response.statusText}`)
-      return false
-    }
-
-    return true
+    return response.ok
   } catch (error) {
     console.error("Error emitting socket event:", error)
     return false
@@ -32,9 +19,7 @@ async function emitSocketEvent(eventType: string, eventData: any) {
 }
 
 interface RouteParams {
-  params: {
-    id: string
-  }
+  params: { id: string }
 }
 
 // PUT /api/counters/[id] - Update counter
@@ -42,7 +27,7 @@ export const PUT = withErrorHandler(
   async (req: NextRequest, { params }: RouteParams) => {
     const { id } = params
     const body = await req.json()
-    const { name, number } = body
+    const { name, number, counterType, isActive } = body
 
     if (!name || number === undefined) {
       return NextResponse.json(
@@ -51,14 +36,9 @@ export const PUT = withErrorHandler(
       )
     }
 
-    // Check if another counter with the same number exists
+    // Cek duplikasi nomor dalam tipe yang sama
     const existingCounter = await prisma.counter.findFirst({
-      where: {
-        number: number,
-        id: {
-          not: id
-        }
-      }
+      where: { number, counterType: counterType ?? undefined, id: { not: id } }
     })
 
     if (existingCounter) {
@@ -72,11 +52,12 @@ export const PUT = withErrorHandler(
       where: { id },
       data: {
         name,
-        number
+        number,
+        ...(counterType && { counterType }),
+        ...(isActive !== undefined && { isActive })
       }
     })
 
-    // Emit socket event for counter update
     await emitSocketEvent("counter-update", {
       type: "COUNTER_UPDATED",
       counter,
@@ -92,7 +73,6 @@ export const DELETE = withErrorHandler(
   async (_req: NextRequest, { params }: RouteParams) => {
     const { id } = params
 
-    // Check if counter is serving a queue
     const counter = await prisma.counter.findUnique({
       where: { id },
       include: { currentQueue: true }
@@ -102,17 +82,14 @@ export const DELETE = withErrorHandler(
       return NextResponse.json(
         {
           error:
-            "Loket sedang melayani antrean. Selesaikan atau pindahkan antrean terlebih dahulu."
+            "Loket sedang melayani antrean. Selesaikan antrean terlebih dahulu."
         },
         { status: 400 }
       )
     }
 
-    await prisma.counter.delete({
-      where: { id }
-    })
+    await prisma.counter.delete({ where: { id } })
 
-    // Emit socket event for counter deletion
     await emitSocketEvent("counter-update", {
       type: "COUNTER_DELETED",
       counterId: id,

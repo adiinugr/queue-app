@@ -1,7 +1,6 @@
 import { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Queue System - Display Screen",
-  description:
-    "Public display screen showing current queue numbers and announcement system for your business"
+  title: "Display Antrian",
+  description: "Layar Display Antrian - Aplikasi Antrian SPMB Jatim Tahun 2026 SMAN 10 Surabaya"
 }

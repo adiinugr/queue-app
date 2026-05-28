@@ -23,7 +23,8 @@ const EVENTS = {
   QUEUE_UPDATE: "queue-update",
   RECALL_EVENT: "recall-event",
   COUNTER_UPDATE: "counter-update",
-  CONNECTION_STATUS: "connection-status"
+  CONNECTION_STATUS: "connection-status",
+  SETTINGS_UPDATE: "settings-update"
 }
 
 // Handle socket connections

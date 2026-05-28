@@ -7,48 +7,56 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Model untuk menyimpan pengaturan sistem
+enum QueueStatus {
+  WAITING
+  CALLED
+  SERVING
+  COMPLETED
+  SKIPPED
+}
+
+enum CounterType {
+  OPERATOR
+  VERIFIKATOR
+}
+
+enum QueueType {
+  OPERATOR
+  VERIFIKATOR
+}
+
 model Setting {
   id                String   @id @default("default")
-  dailyQueueLimit   Int      @default(100) // Batas jumlah antrean per hari
-  startNumber       Int      @default(1) // Nomor antrean awal
-  resetQueueDaily   Boolean  @default(true) // Apakah antrean direset tiap hari
-  allowSimultaneous Boolean  @default(false) // Apakah loket bisa memanggil bersamaan
-  videoUrl          String?  @default("https://www.youtube.com/embed/jAQvxW2l-Pg") // URL video YouTube untuk display
+  dailyQueueLimit   Int      @default(200)
+  startNumber       Int      @default(1)
+  resetQueueDaily   Boolean  @default(true)
+  allowSimultaneous Boolean  @default(false)
+  videoUrl          String?  @default("https://www.youtube.com/embed/jAQvxW2l-Pg")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }
 
-// Model untuk loket
 model Counter {
-  id           String   @id @default(uuid())
-  name         String // Nama loket
-  number       Int // Nomor loket
-  isActive     Boolean  @default(true)
-  currentQueue Queue?   @relation("CurrentQueue") // Antrean yang sedang dilayani
-  queueHistory Queue[]  @relation("QueueHistory") // Riwayat antrean yang dilayani
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id           String      @id @default(uuid())
+  name         String
+  number       Int
+  counterType  CounterType @default(OPERATOR)
+  isActive     Boolean     @default(true)
+  currentQueue Queue?      @relation("CurrentQueue")
+  queueHistory Queue[]     @relation("QueueHistory")
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 }
 
-// Model untuk antrean
 model Queue {
   id               String      @id @default(uuid())
-  number           Int // Nomor antrean
+  number           Int
+  queueType        QueueType   @default(OPERATOR)
   status           QueueStatus @default(WAITING)
   servedBy         Counter?    @relation("CurrentQueue", fields: [counterServingId], references: [id])
-  counterServingId String?     @unique // ID loket yang melayani
+  counterServingId String?     @unique
   historyCounters  Counter[]   @relation("QueueHistory")
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
-  date             DateTime    @default(now()) // Tanggal antrean
-}
-
-// Status antrean
-enum QueueStatus {
-  WAITING // Menunggu
-  CALLED // Dipanggil
-  SERVING // Sedang dilayani
-  COMPLETED // Selesai dilayani
-  SKIPPED // Dilewati
+  date             DateTime    @default(now())
 }

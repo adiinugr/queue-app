@@ -4,13 +4,8 @@ import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
 import toast, { Toaster } from "react-hot-toast"
 import LoadingSpinner from "../components/LoadingSpinner"
-import {
-  useQueueUpdates,
-  QueueUpdateData,
-  useCounterUpdates
-} from "../../lib/socket-client"
+import { useQueueUpdates, useCounterUpdates, QueueUpdateData } from "../../lib/socket-client"
 
-// Tipe data untuk pengaturan
 interface Settings {
   id: string
   dailyQueueLimit: number
@@ -20,1145 +15,1080 @@ interface Settings {
   videoUrl?: string
 }
 
-// Tipe data untuk meja
 interface Counter {
   id: string
   name: string
   number: number
+  counterType: "OPERATOR" | "VERIFIKATOR"
   isActive: boolean
   currentQueue: Queue | null
 }
 
-// Tipe data untuk antrean
 interface Queue {
   id: string
   number: number
+  queueType: "OPERATOR" | "VERIFIKATOR"
   status: string
   counterServingId: string | null
 }
 
-// Tipe data untuk counter update events
-interface CounterUpdateData {
-  type: string
-  counter?: {
-    id: string
-    name: string
-    number: number
-    isActive: boolean
-    currentQueue: Queue | null
-  }
-  counterId?: string
-  timestamp?: number
-}
+type ActiveTab = "dashboard" | "counters" | "settings"
 
 export default function AdminPage() {
-  // State untuk pengaturan
   const [settings, setSettings] = useState<Settings | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [counters, setCounters] = useState<Counter[]>([])
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [queues, setQueues] = useState<Queue[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [newCounter, setNewCounter] = useState({ name: "", number: 0 })
-  const [editingCounter, setEditingCounter] = useState<Counter | null>(null)
+  const [activeTab, setActiveTab] = useState<ActiveTab>("dashboard")
 
-  // Pengaturan yang diubah
+  // Settings form
   const [editedSettings, setEditedSettings] = useState<Partial<Settings>>({})
+  const [savingSettings, setSavingSettings] = useState(false)
 
-  // Fungsi untuk mengambil data pengaturan
-  const fetchSettings = async () => {
-    try {
-      const response = await fetch("/api/settings")
-      if (response.ok) {
-        const data = await response.json()
-        setSettings(data)
-        setEditedSettings({})
-      }
-    } catch (err) {
-      console.error("Error fetching settings:", err)
-      setError("Gagal memuat pengaturan")
-    }
-  }
+  // Issue verifikator queue
+  const [issuingQueue, setIssuingQueue] = useState(false)
+  const [lastIssuedVerifikator, setLastIssuedVerifikator] = useState<number | null>(null)
 
-  // Define fetchCounters and fetchQueues with useCallback
-  const fetchCountersCallback = useCallback(async () => {
-    try {
-      const response = await fetch("/api/counters")
-      if (response.ok) {
-        const data = await response.json()
-        setCounters(data)
-      }
-    } catch (err) {
-      console.error("Error fetching counters:", err)
-      setError("Gagal memuat data operator")
-    }
-  }, [])
+  // Counter form
+  const [newCounterName, setNewCounterName] = useState("")
+  const [newCounterNumber, setNewCounterNumber] = useState("")
+  const [newCounterType, setNewCounterType] = useState<"OPERATOR" | "VERIFIKATOR">("OPERATOR")
+  const [addingCounter, setAddingCounter] = useState(false)
 
-  const fetchQueuesCallback = useCallback(async () => {
+  // Edit counter
+  const [editingCounter, setEditingCounter] = useState<Counter | null>(null)
+  const [editCounterName, setEditCounterName] = useState("")
+  const [editCounterNumber, setEditCounterNumber] = useState("")
+  const [savingCounter, setSavingCounter] = useState(false)
+
+  const fetchAll = useCallback(async () => {
     try {
-      const response = await fetch("/api/queues")
-      if (response.ok) {
-        const data = await response.json()
-        setQueues(data)
-      }
+      const [sRes, cRes, qRes] = await Promise.all([
+        fetch("/api/settings"),
+        fetch("/api/counters"),
+        fetch("/api/queues")
+      ])
+      if (sRes.ok) setSettings(await sRes.json())
+      if (cRes.ok) setCounters(await cRes.json())
+      if (qRes.ok) setQueues(await qRes.json())
     } catch (err) {
-      console.error("Error fetching queues:", err)
-      setError("Gagal memuat data antrian")
+      console.error("Error fetching data:", err)
+      toast.error("Gagal memuat data")
     } finally {
       setLoading(false)
     }
   }, [])
 
-  // Use the callbacks in the handlers
-  const handleQueueUpdateStable = useCallback(
-    (data: QueueUpdateData) => {
-      console.log("Received queue update in admin page:", data)
-      fetchQueuesCallback()
-    },
-    [fetchQueuesCallback]
-  )
+  useEffect(() => { fetchAll() }, [fetchAll])
 
-  const handleCounterUpdateStable = useCallback(
-    (data: CounterUpdateData) => {
-      console.log("Received counter update in admin page:", data)
-      fetchCountersCallback()
-    },
-    [fetchCountersCallback]
-  )
-
-  // Use Socket.io for real-time updates
-  const queueSocketConnected = useQueueUpdates(handleQueueUpdateStable)
-  const counterSocketConnected = useCounterUpdates(handleCounterUpdateStable)
-
-  // Combined connection status
-  const socketConnected = queueSocketConnected || counterSocketConnected
-
-  // Mengambil data saat komponen dimuat
-  useEffect(() => {
-    fetchSettings()
-    fetchCountersCallback()
-    fetchQueuesCallback()
-
-    // Setup polling interval as fallback but reduce frequency significantly
-    // Only poll if Socket.io is not connected
-    const dataInterval = setInterval(() => {
-      if (!socketConnected) {
-        console.log("💡 Fallback: Polling data (Socket not connected)")
-        fetchCountersCallback()
-        fetchQueuesCallback()
-      }
-    }, 30000) // Poll every 30 seconds if Socket.io is not connected
-
-    // Cleanup when component unmounts
-    return () => {
-      clearInterval(dataInterval)
+  const handleQueueUpdate = useCallback((data: QueueUpdateData) => {
+    setQueues((prev) => {
+      const idx = prev.findIndex((q) => q.id === data.queue.id)
+      const updated = { ...data.queue, queueType: (data.queue as Queue).queueType || "OPERATOR" } as Queue
+      if (idx !== -1) return prev.map((q) => q.id === data.queue.id ? updated : q)
+      if (data.type === "QUEUE_CREATED") return [...prev, updated]
+      return prev
+    })
+    if (data.counter) {
+      setCounters((prev) =>
+        prev.map((c) =>
+          c.id === data.counter!.id
+            ? { ...c, currentQueue: data.type === "QUEUE_COMPLETED" ? null : (data.queue as Queue) }
+            : c
+        )
+      )
     }
-  }, [socketConnected, fetchCountersCallback, fetchQueuesCallback])
+  }, [])
 
-  // Replace the original functions with callbacks for other components to use
-  const fetchCounters = fetchCountersCallback
-  const fetchQueues = fetchQueuesCallback
+  const handleCounterUpdate = useCallback(() => {
+    fetchAll()
+  }, [fetchAll])
 
-  // Menyimpan perubahan pengaturan
+  useQueueUpdates(handleQueueUpdate)
+  useCounterUpdates(handleCounterUpdate)
+
+  const issueVerifikatorQueue = async () => {
+    setIssuingQueue(true)
+    try {
+      const res = await fetch("/api/queues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ queueType: "VERIFIKATOR" })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal menambahkan antrian")
+      setLastIssuedVerifikator(data.number)
+      setQueues((prev) => [...prev, data])
+      toast.success(`Nomor antrian Verifikator ${data.number} berhasil diterbitkan`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menambahkan antrian")
+    } finally {
+      setIssuingQueue(false)
+    }
+  }
+
   const saveSettings = async () => {
+    if (!settings) return
+    setSavingSettings(true)
     try {
-      const response = await fetch("/api/settings", {
+      const res = await fetch("/api/settings", {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(editedSettings)
-      })
-
-      if (response.ok) {
-        await fetchSettings()
-        setError(null)
-        toast.success("Pengaturan berhasil disimpan")
-      } else {
-        const data = await response.json()
-        throw new Error(data.error || "Gagal menyimpan pengaturan")
-      }
-    } catch (err: unknown) {
-      console.error("Error saving settings:", err)
-      const errorMessage =
-        err instanceof Error ? err.message : "Gagal menyimpan pengaturan"
-      setError(errorMessage)
-      toast.error(errorMessage)
-    }
-  }
-
-  // Membuat operator baru
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const createCounter = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!newCounter.name.trim()) {
-      toast.error("Nama operator tidak boleh kosong")
-      return
-    }
-
-    try {
-      const response = await fetch("/api/counters", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify(newCounter)
-      })
-
-      if (response.ok) {
-        setNewCounter({ name: "", number: 0 })
-        await fetchCounters()
-        setError(null)
-        toast.success("Operator berhasil ditambahkan")
-      } else {
-        const data = await response.json()
-        throw new Error(data.error || "Gagal membuat operator")
-      }
-    } catch (err: unknown) {
-      console.error("Error creating counter:", err)
-      const errorMessage =
-        err instanceof Error ? err.message : "Gagal membuat operator"
-      setError(errorMessage)
-      toast.error(errorMessage)
-    }
-  }
-
-  // Membuat antrean baru
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const createQueue = async () => {
-    try {
-      const response = await fetch("/api/queues", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        }
-      })
-
-      if (response.ok) {
-        await fetchQueues()
-        setError(null)
-        toast.success("Nomor antrean berhasil diambil")
-      } else {
-        const data = await response.json()
-        throw new Error(data.error || "Gagal membuat antrean")
-      }
-    } catch (err: unknown) {
-      console.error("Error creating queue:", err)
-      const errorMessage =
-        err instanceof Error ? err.message : "Gagal membuat antrean"
-      setError(errorMessage)
-      toast.error(errorMessage)
-    }
-  }
-
-  // Mereset semua antrean
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const resetQueues = async () => {
-    if (!confirm("Anda yakin ingin mereset semua antrean?")) return
-
-    try {
-      const response = await fetch("/api/queues/reset", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        }
-      })
-
-      if (response.ok) {
-        await fetchQueues()
-        await fetchCounters()
-        setError(null)
-        toast.success("Semua antrean berhasil direset")
-      } else {
-        const data = await response.json()
-        throw new Error(data.error || "Gagal mereset antrean")
-      }
-    } catch (err: unknown) {
-      console.error("Error resetting queues:", err)
-      const errorMessage =
-        err instanceof Error ? err.message : "Gagal mereset antrean"
-      setError(errorMessage)
-      toast.error(errorMessage)
-    }
-  }
-
-  // Edit operator
-  const updateCounter = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!editingCounter) return
-
-    if (!editingCounter.name.trim()) {
-      toast.error("Nama operator tidak boleh kosong")
-      return
-    }
-
-    try {
-      const response = await fetch(`/api/counters/${editingCounter.id}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: editingCounter.name,
-          number: editingCounter.number
+          ...settings,
+          ...editedSettings
         })
       })
-
-      if (response.ok) {
-        await fetchCounters()
-        setEditingCounter(null)
-        toast.success("Operator berhasil diperbarui")
-      } else {
-        const data = await response.json()
-        throw new Error(data.error || "Gagal memperbarui operator")
-      }
-    } catch (err: unknown) {
-      console.error("Error updating counter:", err)
-      const errorMessage =
-        err instanceof Error ? err.message : "Gagal memperbarui operator"
-      setError(errorMessage)
-      toast.error(errorMessage)
+      if (!res.ok) throw new Error("Gagal menyimpan pengaturan")
+      const updated = await res.json()
+      setSettings(updated)
+      setEditedSettings({})
+      toast.success("Pengaturan berhasil disimpan")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menyimpan")
+    } finally {
+      setSavingSettings(false)
     }
   }
 
-  // Hapus operator
-  const deleteCounter = async (id: string) => {
-    if (!confirm("Anda yakin ingin menghapus operator ini?")) return
-
+  const addCounter = async () => {
+    if (!newCounterName.trim() || !newCounterNumber) {
+      toast.error("Nama dan nomor loket harus diisi")
+      return
+    }
+    setAddingCounter(true)
     try {
-      const response = await fetch(`/api/counters/${id}`, {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json"
-        }
+      const res = await fetch("/api/counters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newCounterName.trim(),
+          number: parseInt(newCounterNumber),
+          counterType: newCounterType
+        })
       })
-
-      if (response.ok) {
-        await fetchCounters()
-        toast.success("Operator berhasil dihapus")
-      } else {
-        const data = await response.json()
-        throw new Error(data.error || "Gagal menghapus operator")
-      }
-    } catch (err: unknown) {
-      console.error("Error deleting counter:", err)
-      const errorMessage =
-        err instanceof Error ? err.message : "Gagal menghapus operator"
-      setError(errorMessage)
-      toast.error(errorMessage)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal menambahkan loket")
+      setCounters((prev) => [...prev, data])
+      setNewCounterName("")
+      setNewCounterNumber("")
+      toast.success(`Loket ${newCounterType === "VERIFIKATOR" ? "Verifikator" : "Operator"} berhasil ditambahkan`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menambahkan loket")
+    } finally {
+      setAddingCounter(false)
     }
   }
 
-  if (loading) {
-    return <LoadingSpinner fullScreen message="Memuat panel admin..." />
+  const saveCounter = async () => {
+    if (!editingCounter || !editCounterName.trim() || !editCounterNumber) return
+    setSavingCounter(true)
+    try {
+      const res = await fetch(`/api/counters/${editingCounter.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editCounterName.trim(),
+          number: parseInt(editCounterNumber),
+          counterType: editingCounter.counterType
+        })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal menyimpan")
+      setCounters((prev) => prev.map((c) => c.id === editingCounter.id ? { ...c, ...data } : c))
+      setEditingCounter(null)
+      toast.success("Loket berhasil diperbarui")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menyimpan")
+    } finally {
+      setSavingCounter(false)
+    }
+  }
+
+  const setupDefault = async () => {
+    if (!confirm("Buat 10 loket Operator + 5 loket Verifikator secara otomatis? Loket yang sudah ada akan dilewati.")) return
+    const tasks: Array<{ name: string; number: number; counterType: "OPERATOR" | "VERIFIKATOR" }> = [
+      ...Array.from({ length: 10 }, (_, i) => ({ name: `Operator ${i + 1}`, number: i + 1, counterType: "OPERATOR" as const })),
+      ...Array.from({ length: 5 }, (_, i) => ({ name: `Verifikator ${i + 1}`, number: i + 1, counterType: "VERIFIKATOR" as const }))
+    ]
+    let created = 0
+    let skipped = 0
+    for (const task of tasks) {
+      const res = await fetch("/api/counters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(task)
+      })
+      if (res.ok) created++
+      else skipped++
+    }
+    await fetchAll()
+    toast.success(`Setup selesai: ${created} loket dibuat, ${skipped} dilewati`)
+  }
+
+  const deleteCounter = async (id: string, name: string) => {
+    if (!confirm(`Hapus loket "${name}"?`)) return
+    try {
+      const res = await fetch(`/api/counters/${id}`, { method: "DELETE" })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal menghapus")
+      setCounters((prev) => prev.filter((c) => c.id !== id))
+      toast.success("Loket berhasil dihapus")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menghapus")
+    }
+  }
+
+  const resetQueues = async () => {
+    if (!confirm("Reset semua antrian hari ini? Tindakan ini tidak dapat dibatalkan.")) return
+    try {
+      const res = await fetch("/api/queues/reset", { method: "POST" })
+      if (!res.ok) throw new Error("Gagal reset antrian")
+      setQueues([])
+      toast.success("Antrian berhasil direset")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal reset")
+    }
+  }
+
+  if (loading) return <LoadingSpinner fullScreen message="Memuat panel admin..." />
+
+  const operatorCounters = counters.filter((c) => c.counterType === "OPERATOR")
+  const verifikatorCounters = counters.filter((c) => c.counterType === "VERIFIKATOR")
+  const waitingOp = queues.filter((q) => q.status === "WAITING" && q.queueType === "OPERATOR").length
+  const waitingVr = queues.filter((q) => q.status === "WAITING" && q.queueType === "VERIFIKATOR").length
+  const activeOp = queues.filter((q) => (q.status === "CALLED" || q.status === "SERVING") && q.queueType === "OPERATOR").length
+  const activeVr = queues.filter((q) => (q.status === "CALLED" || q.status === "SERVING") && q.queueType === "VERIFIKATOR").length
+  const completedOp = queues.filter((q) => q.status === "COMPLETED" && q.queueType === "OPERATOR").length
+  const completedVr = queues.filter((q) => q.status === "COMPLETED" && q.queueType === "VERIFIKATOR").length
+
+  const currentSettings = { ...settings, ...editedSettings } as Settings
+
+  const inputStyle = {
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.15)",
+    color: "white",
+    fontFamily: "var(--font-jakarta)"
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-white">
+    <div
+      className="min-h-screen"
+      style={{ background: "linear-gradient(160deg, #0A1628 0%, #0D1F35 100%)" }}
+    >
       <Toaster position="top-right" />
 
-      {/* Airbnb-style Header */}
-      <header className="border-b border-gray-100 py-4 sticky top-0 bg-white z-10 shadow-sm">
-        <div className="container mx-auto px-6">
-          <div className="flex items-center justify-between">
-            {/* Logo - centered on mobile, left on desktop */}
-            <div className="flex-1 flex md:justify-start justify-center md:order-1 order-2">
-              <div className="text-2xl font-nunito font-semibold text-gray-800">
-                <span className="text-rose-500">Q</span>ueue
-                <span className="text-rose-500 ml-1">Admin</span>
-              </div>
+      {/* Header */}
+      <header
+        className="sticky top-0 z-30 px-6 py-3"
+        style={{
+          background: "rgba(10,22,40,0.95)",
+          backdropFilter: "blur(12px)",
+          borderBottom: "1px solid rgba(255,255,255,0.08)"
+        }}
+      >
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center"
+              style={{ background: "linear-gradient(135deg, #1A56DB, #3B82F6)" }}
+            >
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+              </svg>
             </div>
-
-            {/* Navigation - hidden on mobile */}
-            <nav className="hidden md:flex justify-center flex-1 md:order-2 order-1">
-              <ul className="flex space-x-8 font-inter text-sm">
-                <li>
-                  <Link href="/" className="text-gray-800 hover:text-rose-500">
-                    Home
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/admin"
-                    className="text-rose-500 border-b-2 border-rose-500 pb-1"
-                  >
-                    Admin
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/display"
-                    className="text-gray-800 hover:text-rose-500"
-                  >
-                    Display
-                  </Link>
-                </li>
-              </ul>
-            </nav>
-
-            {/* Right section - Sign up/Profile */}
-            <div className="flex-1 flex justify-end md:order-3 order-3">
-              <div className="flex items-center space-x-2 border border-gray-200 rounded-full px-4 py-2 hover:shadow-md transition-all duration-200">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 text-gray-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M4 6h16M4 12h16M4 18h16"
-                  />
-                </svg>
-                <div className="h-6 w-6 bg-rose-500 rounded-full flex items-center justify-center">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4 text-white"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                    />
-                  </svg>
-                </div>
-              </div>
+            <div>
+              <p className="text-white font-bold text-sm" style={{ fontFamily: "var(--font-jakarta)" }}>
+                Admin Panel
+              </p>
+              <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-jakarta)" }}>
+                SPMB Jatim 2026 · SMAN 10 Surabaya
+              </p>
             </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/display"
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+              style={{
+                background: "rgba(59,130,246,0.2)",
+                border: "1px solid rgba(59,130,246,0.4)",
+                color: "#93C5FD",
+                fontFamily: "var(--font-jakarta)"
+              }}
+            >
+              Display Antrian
+            </Link>
+            <Link
+              href="/"
+              className="text-xs transition-colors"
+              style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-jakarta)" }}
+            >
+              Beranda
+            </Link>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 bg-gray-50 py-12">
-        <div className="container mx-auto px-6 max-w-6xl">
-          <div className="mb-10">
-            <div className="mb-3 inline-block rounded bg-rose-50 px-3 py-1 text-sm font-inter font-medium text-rose-600 tracking-wide">
-              PANEL ADMINISTRATOR
-            </div>
-            <h1 className="font-inter text-3xl font-bold text-gray-900 md:text-4xl">
-              Pengaturan Sistem
-            </h1>
-          </div>
+      <div className="max-w-7xl mx-auto px-6 py-6">
+        {/* Tabs */}
+        <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background: "rgba(255,255,255,0.05)" }}>
+          {(["dashboard", "counters", "settings"] as ActiveTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className="px-5 py-2 rounded-lg text-sm font-semibold capitalize transition-all"
+              style={{
+                background: activeTab === tab ? "rgba(26,86,219,0.8)" : "transparent",
+                color: activeTab === tab ? "white" : "rgba(255,255,255,0.5)",
+                fontFamily: "var(--font-jakarta)"
+              }}
+            >
+              {tab === "dashboard" ? "Dashboard" : tab === "counters" ? "Kelola Loket" : "Pengaturan"}
+            </button>
+          ))}
+        </div>
 
-          {error && (
-            <div className="mb-6 rounded-xl bg-red-50 p-4 text-red-800 border border-red-200 font-inter">
-              <div className="flex">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 mr-2 text-red-500"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
+        {/* Dashboard Tab */}
+        {activeTab === "dashboard" && (
+          <div className="space-y-6">
+            {/* Stats grid */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              {[
+                { label: "Menunggu (Op)", value: waitingOp, color: "#3B82F6" },
+                { label: "Aktif (Op)", value: activeOp, color: "#F59E0B" },
+                { label: "Selesai (Op)", value: completedOp, color: "#10B981" },
+                { label: "Menunggu (Vr)", value: waitingVr, color: "#14B8A6" },
+                { label: "Aktif (Vr)", value: activeVr, color: "#F59E0B" },
+                { label: "Selesai (Vr)", value: completedVr, color: "#10B981" }
+              ].map((stat) => (
+                <div
+                  key={stat.label}
+                  className="rounded-xl p-4"
+                  style={{
+                    background: `${stat.color}11`,
+                    border: `1px solid ${stat.color}33`
+                  }}
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                  />
-                </svg>
-                <p>{error}</p>
+                  <div
+                    className="text-3xl font-bold mb-1"
+                    style={{ fontFamily: "var(--font-oswald)", color: stat.color }}
+                  >
+                    {stat.value}
+                  </div>
+                  <div
+                    className="text-xs"
+                    style={{ color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-jakarta)" }}
+                  >
+                    {stat.label}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Issue verifikator queue */}
+            <div
+              className="rounded-2xl p-6"
+              style={{
+                background: "rgba(13,148,136,0.08)",
+                border: "1px solid rgba(20,184,166,0.3)"
+              }}
+            >
+              <div className="flex flex-col md:flex-row md:items-center gap-6">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: "#14B8A6" }} />
+                    <span
+                      className="text-xs font-bold uppercase tracking-widest"
+                      style={{ color: "#5EEAD4", fontFamily: "var(--font-jakarta)" }}
+                    >
+                      Antrian Verifikator
+                    </span>
+                  </div>
+                  <h3
+                    className="text-lg font-bold text-white mb-1"
+                    style={{ fontFamily: "var(--font-jakarta)" }}
+                  >
+                    Tambah Nomor Antrian
+                  </h3>
+                  <p
+                    className="text-sm"
+                    style={{ color: "rgba(255,255,255,0.45)", fontFamily: "var(--font-jakarta)" }}
+                  >
+                    Klik setiap kali memberikan kartu antrian kepada pengunjung. Antrian operator akan otomatis bertambah saat verifikator selesai melayani.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-4 flex-shrink-0">
+                  {lastIssuedVerifikator && (
+                    <div className="text-center">
+                      <p
+                        className="text-xs uppercase tracking-widest mb-1"
+                        style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-jakarta)" }}
+                      >
+                        Terakhir
+                      </p>
+                      <div
+                        className="text-4xl font-bold"
+                        style={{ fontFamily: "var(--font-oswald)", color: "#5EEAD4" }}
+                      >
+                        {String(lastIssuedVerifikator).padStart(3, "0")}
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={issueVerifikatorQueue}
+                    disabled={issuingQueue}
+                    className="flex flex-col items-center justify-center gap-1 w-28 h-28 rounded-2xl text-white font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
+                    style={{
+                      background: issuingQueue
+                        ? "rgba(13,148,136,0.3)"
+                        : "linear-gradient(135deg, #0F766E, #0D9488)",
+                      border: "1px solid rgba(20,184,166,0.5)",
+                      boxShadow: "0 0 30px rgba(13,148,136,0.3)",
+                      fontFamily: "var(--font-jakarta)"
+                    }}
+                  >
+                    {issuingQueue ? (
+                      <svg className="w-7 h-7 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    ) : (
+                      <>
+                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                        <span className="text-sm">Tambah</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
-          )}
 
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
-            <div className="lg:col-span-12">
-              <div className="mb-8 rounded-xl bg-white p-8 shadow-sm border border-gray-200 transition-all hover:shadow-md">
-                <h2 className="mb-6 font-inter text-2xl font-bold text-gray-900 flex items-center">
-                  <div className="mr-4 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-rose-100">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-6 w-6 text-rose-600"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-                      />
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                      />
-                    </svg>
-                  </div>
-                  Pengaturan Sistem
-                </h2>
-
-                {settings ? (
-                  <div className="space-y-6 font-inter">
-                    <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Batas Antrean per Hari
-                        </label>
-                        <input
-                          type="number"
-                          value={
-                            editedSettings.dailyQueueLimit !== undefined
-                              ? editedSettings.dailyQueueLimit
-                              : settings?.dailyQueueLimit || ""
-                          }
-                          onChange={(e) => {
-                            const value = e.target.value
-
-                            if (value === "") {
-                              toast.error("Batas antrean tidak boleh kosong")
-                              setEditedSettings({
-                                ...editedSettings,
-                                dailyQueueLimit: 0
-                              })
-                              return
-                            }
-
-                            const parsedValue = parseInt(value)
-                            if (isNaN(parsedValue)) {
-                              toast.error("Batas antrean harus berupa angka")
-                              return
-                            }
-
-                            setEditedSettings({
-                              ...editedSettings,
-                              dailyQueueLimit: parsedValue
-                            })
-                          }}
-                          className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 shadow-sm focus:border-rose-600 focus:outline-none focus:ring-rose-600 sm:text-sm text-gray-900 placeholder-gray-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
-                          Nomor Antrean Awal
-                        </label>
-                        <input
-                          type="number"
-                          value={
-                            editedSettings.startNumber !== undefined
-                              ? editedSettings.startNumber
-                              : settings?.startNumber || ""
-                          }
-                          onChange={(e) => {
-                            const value = e.target.value
-
-                            if (value === "") {
-                              toast.error(
-                                "Nomor awal antrean tidak boleh kosong"
-                              )
-                              setEditedSettings({
-                                ...editedSettings,
-                                startNumber: 0
-                              })
-                              return
-                            }
-
-                            const parsedValue = parseInt(value)
-                            if (isNaN(parsedValue)) {
-                              toast.error(
-                                "Nomor awal antrean harus berupa angka"
-                              )
-                              return
-                            }
-
-                            setEditedSettings({
-                              ...editedSettings,
-                              startNumber: parsedValue
-                            })
-                          }}
-                          className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 shadow-sm focus:border-rose-600 focus:outline-none focus:ring-rose-600 sm:text-sm text-gray-900 placeholder-gray-500"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Video URL Configuration */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        URL Video YouTube untuk Display
-                      </label>
-                      <input
-                        type="url"
-                        value={
-                          editedSettings.videoUrl !== undefined
-                            ? editedSettings.videoUrl
-                            : settings?.videoUrl || ""
-                        }
-                        onChange={(e) => {
-                          setEditedSettings({
-                            ...editedSettings,
-                            videoUrl: e.target.value
-                          })
-                        }}
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 shadow-sm focus:border-rose-600 focus:outline-none focus:ring-rose-600 sm:text-sm text-gray-900 placeholder-gray-500"
-                        placeholder="https://www.youtube.com/embed/VIDEO_ID"
-                      />
-                      <p className="mt-2 text-sm text-gray-500">
-                        Masukkan URL YouTube dalam format embed. Contoh:
-                        https://www.youtube.com/embed/jAQvxW2l-Pg
-                      </p>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          id="resetQueueDaily"
-                          checked={
-                            editedSettings.resetQueueDaily ??
-                            settings.resetQueueDaily
-                          }
-                          onChange={(e) =>
-                            setEditedSettings({
-                              ...editedSettings,
-                              resetQueueDaily: e.target.checked
-                            })
-                          }
-                          className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-600"
-                        />
-                        <label
-                          htmlFor="resetQueueDaily"
-                          className="ml-3 block text-sm text-gray-700"
-                        >
-                          Reset antrean otomatis setiap hari
-                        </label>
-                      </div>
-
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          id="allowSimultaneous"
-                          checked={
-                            editedSettings.allowSimultaneous ??
-                            settings.allowSimultaneous
-                          }
-                          onChange={(e) =>
-                            setEditedSettings({
-                              ...editedSettings,
-                              allowSimultaneous: e.target.checked
-                            })
-                          }
-                          className="h-4 w-4 rounded border-gray-300 text-rose-600 focus:ring-rose-600"
-                        />
-                        <label
-                          htmlFor="allowSimultaneous"
-                          className="ml-3 block text-sm text-gray-700"
-                        >
-                          Izinkan operator memanggil antrian bersamaan
-                        </label>
-                      </div>
-                    </div>
-
-                    <div className="pt-4">
-                      <button
-                        onClick={saveSettings}
-                        className="rounded-lg bg-rose-600 px-5 py-2.5 font-medium text-white shadow-sm hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-600 focus:ring-offset-2 transition-all duration-200"
+            {/* Counter status */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Operators */}
+              <div
+                className="rounded-2xl overflow-hidden"
+                style={{ border: "1px solid rgba(59,130,246,0.3)" }}
+              >
+                <div
+                  className="px-5 py-3 flex items-center gap-2"
+                  style={{
+                    background: "linear-gradient(90deg, rgba(26,86,219,0.5), rgba(26,86,219,0.15))",
+                    borderBottom: "1px solid rgba(59,130,246,0.3)"
+                  }}
+                >
+                  <div className="w-2 h-2 rounded-full" style={{ background: "#3B82F6", boxShadow: "0 0 6px #3B82F6" }} />
+                  <span className="text-sm font-bold text-white" style={{ fontFamily: "var(--font-jakarta)" }}>
+                    Status Operator ({operatorCounters.length}/10)
+                  </span>
+                </div>
+                <div className="p-4 space-y-2">
+                  {operatorCounters.length === 0 ? (
+                    <p className="text-sm text-center py-4" style={{ color: "rgba(255,255,255,0.3)", fontFamily: "var(--font-jakarta)" }}>
+                      Belum ada loket operator
+                    </p>
+                  ) : (
+                    operatorCounters.map((c) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between rounded-lg px-3 py-2"
+                        style={{ background: "rgba(255,255,255,0.04)" }}
                       >
-                        Simpan Pengaturan
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-gray-500 font-inter">
-                    Tidak dapat memuat pengaturan
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-7 h-7 rounded flex items-center justify-center text-xs font-bold"
+                            style={{ background: "rgba(59,130,246,0.2)", color: "#93C5FD", fontFamily: "var(--font-oswald)" }}
+                          >
+                            {c.number}
+                          </span>
+                          <span className="text-sm text-white" style={{ fontFamily: "var(--font-jakarta)" }}>
+                            {c.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {c.currentQueue && (
+                            <span
+                              className="text-xs font-bold px-2 py-0.5 rounded-full"
+                              style={{ background: "rgba(245,158,11,0.2)", color: "#F59E0B", fontFamily: "var(--font-jakarta)" }}
+                            >
+                              #{c.currentQueue.number}
+                            </span>
+                          )}
+                          <Link
+                            href={`/loket/${c.id}`}
+                            className="text-xs px-2 py-1 rounded-lg transition-all hover:opacity-80"
+                            style={{
+                              background: "rgba(26,86,219,0.3)",
+                              color: "#93C5FD",
+                              fontFamily: "var(--font-jakarta)"
+                            }}
+                          >
+                            Buka
+                          </Link>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Verifikators */}
+              <div
+                className="rounded-2xl overflow-hidden"
+                style={{ border: "1px solid rgba(20,184,166,0.3)" }}
+              >
+                <div
+                  className="px-5 py-3 flex items-center gap-2"
+                  style={{
+                    background: "linear-gradient(90deg, rgba(13,148,136,0.5), rgba(13,148,136,0.15))",
+                    borderBottom: "1px solid rgba(20,184,166,0.3)"
+                  }}
+                >
+                  <div className="w-2 h-2 rounded-full" style={{ background: "#14B8A6", boxShadow: "0 0 6px #14B8A6" }} />
+                  <span className="text-sm font-bold text-white" style={{ fontFamily: "var(--font-jakarta)" }}>
+                    Status Verifikator ({verifikatorCounters.length}/5)
+                  </span>
+                </div>
+                <div className="p-4 space-y-2">
+                  {verifikatorCounters.length === 0 ? (
+                    <p className="text-sm text-center py-4" style={{ color: "rgba(255,255,255,0.3)", fontFamily: "var(--font-jakarta)" }}>
+                      Belum ada loket verifikator
+                    </p>
+                  ) : (
+                    verifikatorCounters.map((c) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between rounded-lg px-3 py-2"
+                        style={{ background: "rgba(255,255,255,0.04)" }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-7 h-7 rounded flex items-center justify-center text-xs font-bold"
+                            style={{ background: "rgba(20,184,166,0.2)", color: "#5EEAD4", fontFamily: "var(--font-oswald)" }}
+                          >
+                            V{c.number}
+                          </span>
+                          <span className="text-sm text-white" style={{ fontFamily: "var(--font-jakarta)" }}>
+                            {c.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {c.currentQueue && (
+                            <span
+                              className="text-xs font-bold px-2 py-0.5 rounded-full"
+                              style={{ background: "rgba(245,158,11,0.2)", color: "#F59E0B", fontFamily: "var(--font-jakarta)" }}
+                            >
+                              #{c.currentQueue.number}
+                            </span>
+                          )}
+                          <Link
+                            href={`/loket/${c.id}`}
+                            className="text-xs px-2 py-1 rounded-lg transition-all hover:opacity-80"
+                            style={{
+                              background: "rgba(13,148,136,0.3)",
+                              color: "#5EEAD4",
+                              fontFamily: "var(--font-jakarta)"
+                            }}
+                          >
+                            Buka
+                          </Link>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Reset button */}
+            <div className="flex justify-end">
+              <button
+                onClick={resetQueues}
+                className="px-5 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
+                style={{
+                  background: "rgba(239,68,68,0.2)",
+                  border: "1px solid rgba(239,68,68,0.4)",
+                  color: "#FCA5A5",
+                  fontFamily: "var(--font-jakarta)"
+                }}
+              >
+                Reset Semua Antrian Hari Ini
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Counters Tab */}
+        {activeTab === "counters" && (
+          <div className="space-y-6">
+            {/* Add counter form */}
+            <div
+              className="rounded-2xl p-6"
+              style={{
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.1)"
+              }}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h2
+                  className="text-base font-bold text-white"
+                  style={{ fontFamily: "var(--font-jakarta)" }}
+                >
+                  Tambah Loket Baru
+                </h2>
+                <button
+                  onClick={setupDefault}
+                  className="px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+                  style={{
+                    background: "rgba(245,158,11,0.2)",
+                    border: "1px solid rgba(245,158,11,0.4)",
+                    color: "#FCD34D",
+                    fontFamily: "var(--font-jakarta)"
+                  }}
+                >
+                  Setup Default (10 Op + 5 Vr)
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <select
+                  value={newCounterType}
+                  onChange={(e) => setNewCounterType(e.target.value as "OPERATOR" | "VERIFIKATOR")}
+                  className="px-3 py-2 rounded-lg text-sm outline-none"
+                  style={inputStyle}
+                >
+                  <option value="OPERATOR" style={{ background: "#0D1F35" }}>Operator</option>
+                  <option value="VERIFIKATOR" style={{ background: "#0D1F35" }}>Verifikator</option>
+                </select>
+                <input
+                  type="number"
+                  min="1"
+                  value={newCounterNumber}
+                  onChange={(e) => setNewCounterNumber(e.target.value)}
+                  placeholder={newCounterType === "VERIFIKATOR" ? "Nomor (1-5)" : "Nomor (1-10)"}
+                  className="px-3 py-2 rounded-lg text-sm outline-none placeholder-gray-500"
+                  style={inputStyle}
+                />
+                <input
+                  type="text"
+                  value={newCounterName}
+                  onChange={(e) => setNewCounterName(e.target.value)}
+                  placeholder={`Nama loket (e.g. ${newCounterType === "VERIFIKATOR" ? "Verifikator 1" : "Operator 1"})`}
+                  className="px-3 py-2 rounded-lg text-sm outline-none placeholder-gray-500"
+                  style={inputStyle}
+                />
+                <button
+                  onClick={addCounter}
+                  disabled={addingCounter}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all hover:opacity-80 disabled:opacity-50"
+                  style={{
+                    background: newCounterType === "VERIFIKATOR"
+                      ? "linear-gradient(135deg, #0F766E, #0D9488)"
+                      : "linear-gradient(135deg, #1D4ED8, #1A56DB)",
+                    fontFamily: "var(--font-jakarta)"
+                  }}
+                >
+                  {addingCounter ? "Menambahkan..." : "Tambah"}
+                </button>
+              </div>
+            </div>
+
+            {/* Operator list */}
+            <div
+              className="rounded-2xl overflow-hidden"
+              style={{ border: "1px solid rgba(59,130,246,0.3)" }}
+            >
+              <div
+                className="px-5 py-3"
+                style={{
+                  background: "linear-gradient(90deg, rgba(26,86,219,0.4), rgba(26,86,219,0.1))",
+                  borderBottom: "1px solid rgba(59,130,246,0.3)"
+                }}
+              >
+                <span className="text-sm font-bold text-white" style={{ fontFamily: "var(--font-jakarta)" }}>
+                  Loket Operator ({operatorCounters.length}/10)
+                </span>
+              </div>
+              <div className="p-4 space-y-2">
+                {operatorCounters.length === 0 ? (
+                  <p className="text-sm text-center py-6" style={{ color: "rgba(255,255,255,0.3)", fontFamily: "var(--font-jakarta)" }}>
+                    Belum ada loket operator. Tambahkan di atas.
                   </p>
+                ) : (
+                  operatorCounters.map((c) => (
+                    <div key={c.id}>
+                      {editingCounter?.id === c.id ? (
+                        <div
+                          className="flex items-center gap-2 rounded-xl p-3"
+                          style={{ background: "rgba(26,86,219,0.15)", border: "1px solid rgba(59,130,246,0.4)" }}
+                        >
+                          <input
+                            type="number"
+                            value={editCounterNumber}
+                            onChange={(e) => setEditCounterNumber(e.target.value)}
+                            className="w-16 px-2 py-1.5 rounded-lg text-sm outline-none"
+                            style={inputStyle}
+                          />
+                          <input
+                            type="text"
+                            value={editCounterName}
+                            onChange={(e) => setEditCounterName(e.target.value)}
+                            className="flex-1 px-2 py-1.5 rounded-lg text-sm outline-none"
+                            style={inputStyle}
+                          />
+                          <button
+                            onClick={saveCounter}
+                            disabled={savingCounter}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+                            style={{ background: "#1A56DB", fontFamily: "var(--font-jakarta)" }}
+                          >
+                            {savingCounter ? "..." : "Simpan"}
+                          </button>
+                          <button
+                            onClick={() => setEditingCounter(null)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                            style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)", fontFamily: "var(--font-jakarta)" }}
+                          >
+                            Batal
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          className="flex items-center justify-between rounded-xl px-4 py-3"
+                          style={{ background: "rgba(255,255,255,0.04)" }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span
+                              className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold"
+                              style={{ background: "rgba(59,130,246,0.2)", color: "#93C5FD", fontFamily: "var(--font-oswald)" }}
+                            >
+                              {c.number}
+                            </span>
+                            <div>
+                              <p className="text-sm font-medium text-white" style={{ fontFamily: "var(--font-jakarta)" }}>
+                                {c.name}
+                              </p>
+                              <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-jakarta)" }}>
+                                {c.currentQueue ? `Melayani #${c.currentQueue.number}` : "Menunggu"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Link
+                              href={`/loket/${c.id}`}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+                              style={{ background: "rgba(26,86,219,0.3)", color: "#93C5FD", fontFamily: "var(--font-jakarta)" }}
+                            >
+                              Buka
+                            </Link>
+                            <button
+                              onClick={() => { setEditingCounter(c); setEditCounterName(c.name); setEditCounterNumber(String(c.number)) }}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+                              style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", fontFamily: "var(--font-jakarta)" }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => deleteCounter(c.id, c.name)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+                              style={{ background: "rgba(239,68,68,0.2)", color: "#FCA5A5", fontFamily: "var(--font-jakarta)" }}
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
                 )}
               </div>
             </div>
 
-            <div className="lg:col-span-12">
-              <div className="mb-8 rounded-xl bg-white p-8 shadow-sm border border-gray-200 transition-all hover:shadow-md">
-                <h2 className="mb-6 font-inter text-2xl font-bold text-gray-900 flex items-center">
-                  <div className="mr-4 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-rose-100">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-6 w-6 text-rose-600"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                      />
-                    </svg>
-                  </div>
-                  Manajemen Operator
-                </h2>
-
-                <div className="space-y-6 font-inter">
-                  <form
-                    onSubmit={createCounter}
-                    className="space-y-4 border-b border-gray-100 pb-6"
-                  >
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Nama Operator
-                      </label>
-                      <input
-                        type="text"
-                        value={newCounter.name}
-                        onChange={(e) =>
-                          setNewCounter({
-                            ...newCounter,
-                            name: e.target.value
-                          })
-                        }
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 shadow-sm focus:border-rose-600 focus:outline-none focus:ring-rose-600 sm:text-sm text-gray-900 placeholder-gray-500"
-                        placeholder="Masukkan nama operator"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
-                        Nomor Operator
-                      </label>
-                      <input
-                        type="number"
-                        value={newCounter.number || ""}
-                        onChange={(e) => {
-                          const value = e.target.value
-
-                          if (value === "") {
-                            toast.error("Nomor operator tidak boleh kosong")
-                            setNewCounter({
-                              ...newCounter,
-                              number: 0
-                            })
-                            return
-                          }
-
-                          const parsedValue = parseInt(value)
-                          if (isNaN(parsedValue)) {
-                            toast.error("Nomor operator harus berupa angka")
-                            return
-                          }
-
-                          setNewCounter({
-                            ...newCounter,
-                            number: parsedValue
-                          })
-                        }}
-                        className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 shadow-sm focus:border-rose-600 focus:outline-none focus:ring-rose-600 sm:text-sm text-gray-900 placeholder-gray-500"
-                        placeholder="Masukkan nomor operator"
-                      />
-                    </div>
-                    <div>
-                      <button
-                        type="submit"
-                        className="rounded-lg bg-rose-600 px-5 py-2.5 font-medium text-white shadow-sm hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-600 focus:ring-offset-2 transition-all duration-200"
-                      >
-                        Tambah Operator
-                      </button>
-                    </div>
-                  </form>
-
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-medium text-gray-900">
-                      Daftar Operator
-                    </h3>
-
-                    {editingCounter ? (
-                      <div className="border border-rose-200 bg-rose-50 p-4 rounded-lg mb-4">
-                        <h4 className="font-medium text-gray-900 mb-3">
-                          Edit Operator
-                        </h4>
-                        <form onSubmit={updateCounter} className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700">
-                              Nama Operator
-                            </label>
-                            <input
-                              type="text"
-                              value={editingCounter.name}
-                              onChange={(e) =>
-                                setEditingCounter({
-                                  ...editingCounter,
-                                  name: e.target.value
-                                })
-                              }
-                              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 shadow-sm focus:border-rose-600 focus:outline-none focus:ring-rose-600 sm:text-sm text-gray-900 placeholder-gray-500"
-                              placeholder="Masukkan nama operator"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700">
-                              Nomor Operator
-                            </label>
-                            <input
-                              type="number"
-                              value={editingCounter.number || ""}
-                              onChange={(e) => {
-                                const value = e.target.value
-
-                                if (value === "") {
-                                  toast.error(
-                                    "Nomor operator tidak boleh kosong"
-                                  )
-                                  setEditingCounter({
-                                    ...editingCounter,
-                                    number: 0
-                                  })
-                                  return
-                                }
-
-                                const parsedValue = parseInt(value)
-                                if (isNaN(parsedValue)) {
-                                  toast.error(
-                                    "Nomor operator harus berupa angka"
-                                  )
-                                  return
-                                }
-
-                                setEditingCounter({
-                                  ...editingCounter,
-                                  number: parsedValue
-                                })
-                              }}
-                              className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2.5 shadow-sm focus:border-rose-600 focus:outline-none focus:ring-rose-600 sm:text-sm text-gray-900 placeholder-gray-500"
-                              placeholder="Masukkan nomor operator"
-                            />
-                          </div>
-                          <div className="flex space-x-2">
-                            <button
-                              type="submit"
-                              className="rounded-lg bg-rose-600 px-4 py-2 font-medium text-white shadow-sm hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-600 focus:ring-offset-2 transition-all duration-200"
-                            >
-                              Simpan
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingCounter(null)}
-                              className="rounded-lg bg-white border border-gray-300 px-4 py-2 font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-rose-600 focus:ring-offset-2 transition-all duration-200"
-                            >
-                              Batal
-                            </button>
-                          </div>
-                        </form>
-                      </div>
-                    ) : null}
-
-                    {counters.length > 0 ? (
-                      <div className="space-y-4">
-                        {counters.map((counter) => (
-                          <div
-                            key={counter.id}
-                            className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:shadow-md transition-all duration-200"
-                          >
-                            <div className="flex items-start space-x-4">
-                              <div className="flex-shrink-0 h-10 w-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-semibold">
-                                {counter.number}
-                              </div>
-                              <div>
-                                <p className="font-medium text-gray-900 text-base">
-                                  {counter.name}
-                                </p>
-                                <p className="text-sm text-gray-500 mt-1">
-                                  Status:{" "}
-                                  {counter.isActive ? (
-                                    <span className="text-green-600 bg-green-50 px-2 py-0.5 rounded-full text-xs font-medium">
-                                      Aktif
-                                    </span>
-                                  ) : (
-                                    <span className="text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full text-xs font-medium">
-                                      Tidak Aktif
-                                    </span>
-                                  )}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex space-x-2">
-                              {counter.currentQueue && (
-                                <div className="bg-rose-50 px-3 py-1.5 rounded-lg text-rose-800 text-sm font-medium mr-2 flex items-center">
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    className="h-4 w-4 mr-1"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z"
-                                    />
-                                  </svg>
-                                  <span>
-                                    Antrian: {counter.currentQueue.number}
-                                  </span>
-                                </div>
-                              )}
-                              <div className="flex items-center space-x-2">
-                                <Link
-                                  target="_blank"
-                                  href={`/loket/${counter.id}`}
-                                  className="inline-flex items-center rounded-lg border border-rose-300 bg-rose-50 p-2 text-sm font-medium text-rose-700 shadow-sm hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-600 focus:ring-offset-2 transition-all duration-200"
-                                  title="Buka Halaman Operator"
-                                >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    className="h-4 w-4"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                                    />
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                                    />
-                                  </svg>
-                                </Link>
-                                <button
-                                  onClick={() => setEditingCounter(counter)}
-                                  className="inline-flex items-center rounded-lg border border-gray-300 bg-white p-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-rose-600 focus:ring-offset-2 transition-all duration-200"
-                                  title="Edit"
-                                >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    className="h-4 w-4"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
-                                    />
-                                  </svg>
-                                </button>
-                                <button
-                                  onClick={() => deleteCounter(counter.id)}
-                                  className="inline-flex items-center rounded-lg border border-gray-300 bg-white p-2 text-sm font-medium text-red-600 shadow-sm hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-all duration-200"
-                                  title="Hapus"
-                                >
-                                  <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    className="h-4 w-4"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                  >
-                                    <path
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeWidth={2}
-                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                    />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="bg-gray-50 rounded-xl p-8 text-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-12 w-12 text-gray-400 mx-auto mb-3"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={1}
-                            d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                          />
-                        </svg>
-                        <p className="text-gray-500 font-inter">
-                          Belum ada operator
-                        </p>
-                        <p className="text-sm text-gray-400 mt-1">
-                          Tambahkan operator baru menggunakan form di atas
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+            {/* Verifikator list */}
+            <div
+              className="rounded-2xl overflow-hidden"
+              style={{ border: "1px solid rgba(20,184,166,0.3)" }}
+            >
+              <div
+                className="px-5 py-3"
+                style={{
+                  background: "linear-gradient(90deg, rgba(13,148,136,0.4), rgba(13,148,136,0.1))",
+                  borderBottom: "1px solid rgba(20,184,166,0.3)"
+                }}
+              >
+                <span className="text-sm font-bold text-white" style={{ fontFamily: "var(--font-jakarta)" }}>
+                  Loket Verifikator ({verifikatorCounters.length}/5)
+                </span>
               </div>
-            </div>
-
-            <div className="lg:col-span-12">
-              <div className="mb-8 rounded-xl bg-white p-8 shadow-sm border border-gray-200 transition-all hover:shadow-md">
-                <h2 className="mb-6 font-inter text-2xl font-bold text-gray-900 flex items-center">
-                  <div className="mr-4 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-rose-100">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      className="h-6 w-6 text-rose-600"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
-                      />
-                    </svg>
-                  </div>
-                  Manajemen Antrean
-                </h2>
-
-                <div className="space-y-6 font-inter">
-                  <div className="flex space-x-4 pb-6 border-b border-gray-100">
-                    <button
-                      onClick={createQueue}
-                      className="rounded-lg bg-rose-600 px-5 py-2.5 font-medium text-white shadow-sm hover:bg-rose-700 focus:outline-none focus:ring-2 focus:ring-rose-600 focus:ring-offset-2 transition-all duration-200"
-                    >
-                      Ambil Nomor
-                    </button>
-                    <button
-                      onClick={resetQueues}
-                      className="rounded-lg bg-white border border-gray-300 px-5 py-2.5 font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-rose-600 focus:ring-offset-2 transition-all duration-200"
-                    >
-                      Reset Antrean
-                    </button>
-                  </div>
-
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-medium text-gray-900">
-                      Daftar Antrean
-                    </h3>
-
-                    {queues.length > 0 ? (
-                      <div className="overflow-y-auto max-h-[500px] space-y-4 pr-1">
-                        {[...queues]
-                          .sort((a, b) => b.number - a.number)
-                          .map((queue) => (
-                            <div
-                              key={queue.id}
-                              className="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-5 shadow-sm hover:shadow-md transition-all duration-200"
-                            >
-                              <div className="flex items-start space-x-4">
-                                <div className="flex-shrink-0 h-10 w-10 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 font-semibold">
-                                  {queue.number}
-                                </div>
-                                <div>
-                                  <p className="font-medium text-gray-900 text-base">
-                                    Antrean #{queue.number}
-                                  </p>
-                                  <p className="text-sm text-gray-500 mt-1">
-                                    Status:{" "}
-                                    <span
-                                      className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                                        queue.status === "WAITING"
-                                          ? "bg-gray-100 text-gray-700"
-                                          : queue.status === "CALLED"
-                                          ? "bg-yellow-100 text-yellow-700"
-                                          : queue.status === "SERVING"
-                                          ? "bg-rose-100 text-rose-700"
-                                          : queue.status === "COMPLETED"
-                                          ? "bg-green-100 text-green-700"
-                                          : "bg-red-100 text-red-700"
-                                      }`}
-                                    >
-                                      {queue.status === "WAITING" && "Menunggu"}
-                                      {queue.status === "CALLED" && "Dipanggil"}
-                                      {queue.status === "SERVING" && "Dilayani"}
-                                      {queue.status === "COMPLETED" &&
-                                        "Selesai"}
-                                      {queue.status === "SKIPPED" &&
-                                        "Lewat/Batal"}
-                                    </span>
-                                  </p>
-                                </div>
-                              </div>
-                              {queue.counterServingId && (
-                                <div className="flex items-center space-x-2">
-                                  <span className="inline-flex items-center rounded-full bg-rose-100 px-3 py-0.5 text-sm font-medium text-rose-800">
-                                    <svg
-                                      xmlns="http://www.w3.org/2000/svg"
-                                      className="h-4 w-4 mr-1"
-                                      fill="none"
-                                      viewBox="0 0 24 24"
-                                      stroke="currentColor"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2}
-                                        d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"
-                                      />
-                                    </svg>
-                                    Operator{" "}
-                                    {
-                                      counters.find(
-                                        (c) => c.id === queue.counterServingId
-                                      )?.number
-                                    }
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                      </div>
-                    ) : (
-                      <div className="bg-gray-50 rounded-xl p-8 text-center">
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-12 w-12 text-gray-400 mx-auto mb-3"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
+              <div className="p-4 space-y-2">
+                {verifikatorCounters.length === 0 ? (
+                  <p className="text-sm text-center py-6" style={{ color: "rgba(255,255,255,0.3)", fontFamily: "var(--font-jakarta)" }}>
+                    Belum ada loket verifikator. Tambahkan di atas.
+                  </p>
+                ) : (
+                  verifikatorCounters.map((c) => (
+                    <div key={c.id}>
+                      {editingCounter?.id === c.id ? (
+                        <div
+                          className="flex items-center gap-2 rounded-xl p-3"
+                          style={{ background: "rgba(13,148,136,0.15)", border: "1px solid rgba(20,184,166,0.4)" }}
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={1}
-                            d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"
+                          <input
+                            type="number"
+                            value={editCounterNumber}
+                            onChange={(e) => setEditCounterNumber(e.target.value)}
+                            className="w-16 px-2 py-1.5 rounded-lg text-sm outline-none"
+                            style={inputStyle}
                           />
-                        </svg>
-                        <p className="text-gray-500 font-inter">
-                          Belum ada antrean
-                        </p>
-                        <p className="text-sm text-gray-400 mt-1">
-                          Klik tombol &ldquo;Ambil Nomor&rdquo; untuk membuat
-                          antrean baru
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                          <input
+                            type="text"
+                            value={editCounterName}
+                            onChange={(e) => setEditCounterName(e.target.value)}
+                            className="flex-1 px-2 py-1.5 rounded-lg text-sm outline-none"
+                            style={inputStyle}
+                          />
+                          <button
+                            onClick={saveCounter}
+                            disabled={savingCounter}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white"
+                            style={{ background: "#0D9488", fontFamily: "var(--font-jakarta)" }}
+                          >
+                            {savingCounter ? "..." : "Simpan"}
+                          </button>
+                          <button
+                            onClick={() => setEditingCounter(null)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+                            style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)", fontFamily: "var(--font-jakarta)" }}
+                          >
+                            Batal
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          className="flex items-center justify-between rounded-xl px-4 py-3"
+                          style={{ background: "rgba(255,255,255,0.04)" }}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span
+                              className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold"
+                              style={{ background: "rgba(20,184,166,0.2)", color: "#5EEAD4", fontFamily: "var(--font-oswald)" }}
+                            >
+                              V{c.number}
+                            </span>
+                            <div>
+                              <p className="text-sm font-medium text-white" style={{ fontFamily: "var(--font-jakarta)" }}>
+                                {c.name}
+                              </p>
+                              <p className="text-xs" style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-jakarta)" }}>
+                                {c.currentQueue ? `Melayani #${c.currentQueue.number}` : "Menunggu"}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Link
+                              href={`/loket/${c.id}`}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+                              style={{ background: "rgba(13,148,136,0.3)", color: "#5EEAD4", fontFamily: "var(--font-jakarta)" }}
+                            >
+                              Buka
+                            </Link>
+                            <button
+                              onClick={() => { setEditingCounter(c); setEditCounterName(c.name); setEditCounterNumber(String(c.number)) }}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+                              style={{ background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.7)", fontFamily: "var(--font-jakarta)" }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => deleteCounter(c.id, c.name)}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+                              style={{ background: "rgba(239,68,68,0.2)", color: "#FCA5A5", fontFamily: "var(--font-jakarta)" }}
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           </div>
-        </div>
-      </main>
+        )}
 
-      <footer className="bg-gray-50 border-t border-gray-100 py-6">
-        <div className="container mx-auto px-6 text-center">
-          <p className="text-gray-500 text-sm font-inter">
-            &copy; {new Date().getFullYear()} Queue System. All rights reserved.
-          </p>
-        </div>
-      </footer>
+        {/* Settings Tab */}
+        {activeTab === "settings" && settings && (
+          <div
+            className="rounded-2xl p-6 max-w-2xl"
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.1)"
+            }}
+          >
+            <h2
+              className="text-base font-bold text-white mb-6"
+              style={{ fontFamily: "var(--font-jakarta)" }}
+            >
+              Pengaturan Sistem
+            </h2>
+
+            <div className="space-y-5">
+              {/* Video URL */}
+              <div>
+                <label
+                  className="block text-sm font-semibold mb-2"
+                  style={{ color: "rgba(255,255,255,0.7)", fontFamily: "var(--font-jakarta)" }}
+                >
+                  URL Video YouTube (tampil di Display)
+                </label>
+                <input
+                  type="text"
+                  value={
+                    editedSettings.videoUrl !== undefined
+                      ? editedSettings.videoUrl
+                      : settings.videoUrl || ""
+                  }
+                  onChange={(e) =>
+                    setEditedSettings((prev) => ({ ...prev, videoUrl: e.target.value }))
+                  }
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="w-full px-4 py-2.5 rounded-xl text-sm outline-none placeholder-gray-600"
+                  style={inputStyle}
+                />
+                <p
+                  className="text-xs mt-1"
+                  style={{ color: "rgba(255,255,255,0.3)", fontFamily: "var(--font-jakarta)" }}
+                >
+                  Masukkan URL YouTube (watch, youtu.be, atau embed). Perubahan langsung tampil di display.
+                </p>
+              </div>
+
+              {/* Daily queue limit */}
+              <div>
+                <label
+                  className="block text-sm font-semibold mb-2"
+                  style={{ color: "rgba(255,255,255,0.7)", fontFamily: "var(--font-jakarta)" }}
+                >
+                  Batas Antrian Harian (per tipe)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="999"
+                  value={
+                    editedSettings.dailyQueueLimit !== undefined
+                      ? editedSettings.dailyQueueLimit
+                      : settings.dailyQueueLimit
+                  }
+                  onChange={(e) =>
+                    setEditedSettings((prev) => ({
+                      ...prev,
+                      dailyQueueLimit: parseInt(e.target.value) || 200
+                    }))
+                  }
+                  className="w-full px-4 py-2.5 rounded-xl text-sm outline-none"
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Start number */}
+              <div>
+                <label
+                  className="block text-sm font-semibold mb-2"
+                  style={{ color: "rgba(255,255,255,0.7)", fontFamily: "var(--font-jakarta)" }}
+                >
+                  Nomor Antrian Awal
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={
+                    editedSettings.startNumber !== undefined
+                      ? editedSettings.startNumber
+                      : settings.startNumber
+                  }
+                  onChange={(e) =>
+                    setEditedSettings((prev) => ({
+                      ...prev,
+                      startNumber: parseInt(e.target.value) || 1
+                    }))
+                  }
+                  className="w-full px-4 py-2.5 rounded-xl text-sm outline-none"
+                  style={inputStyle}
+                />
+              </div>
+
+              {/* Toggles */}
+              {[
+                { key: "resetQueueDaily" as keyof Settings, label: "Reset antrian otomatis setiap hari" },
+                { key: "allowSimultaneous" as keyof Settings, label: "Izinkan loket memanggil bersamaan" }
+              ].map(({ key, label }) => (
+                <div key={key} className="flex items-center justify-between">
+                  <label
+                    className="text-sm font-semibold"
+                    style={{ color: "rgba(255,255,255,0.7)", fontFamily: "var(--font-jakarta)" }}
+                  >
+                    {label}
+                  </label>
+                  <button
+                    onClick={() =>
+                      setEditedSettings((prev) => ({
+                        ...prev,
+                        [key]: !(editedSettings[key] !== undefined
+                          ? editedSettings[key]
+                          : settings[key])
+                      }))
+                    }
+                    className="relative w-12 h-6 rounded-full transition-all"
+                    style={{
+                      background: (editedSettings[key] !== undefined ? editedSettings[key] : settings[key])
+                        ? "#1A56DB"
+                        : "rgba(255,255,255,0.15)"
+                    }}
+                  >
+                    <div
+                      className="absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all"
+                      style={{
+                        left: (editedSettings[key] !== undefined ? editedSettings[key] : settings[key])
+                          ? "calc(100% - 1.375rem)"
+                          : "0.125rem"
+                      }}
+                    />
+                  </button>
+                </div>
+              ))}
+
+              {/* Save button */}
+              <div className="pt-2">
+                <button
+                  onClick={saveSettings}
+                  disabled={savingSettings || Object.keys(editedSettings).length === 0}
+                  className="w-full px-6 py-3 rounded-xl text-sm font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    background: "linear-gradient(135deg, #1D4ED8, #1A56DB)",
+                    fontFamily: "var(--font-jakarta)"
+                  }}
+                >
+                  {savingSettings ? "Menyimpan..." : "Simpan Pengaturan"}
+                </button>
+                {Object.keys(editedSettings).length === 0 && (
+                  <p
+                    className="text-xs text-center mt-2"
+                    style={{ color: "rgba(255,255,255,0.3)", fontFamily: "var(--font-jakarta)" }}
+                  >
+                    Tidak ada perubahan
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

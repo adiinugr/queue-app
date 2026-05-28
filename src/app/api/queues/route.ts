@@ -1,45 +1,17 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
-import { withErrorHandlerNoReq } from "../middleware"
+import { withErrorHandler, withErrorHandlerNoReq } from "../middleware"
 
-// Function to emit socket event
-async function emitSocketEvent(
-  eventType: string,
-  eventData: {
-    type: string
-    queue: {
-      id: string
-      number: number
-      status: string
-      counterServingId: string | null
-      date: Date
-    }
-    timestamp?: number
-  }
-) {
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4010"
+
+async function emitSocketEvent(eventType: string, eventData: object) {
   try {
-    const socketServerUrl =
-      process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
-
-    console.log(`Emitting ${eventType} event:`, eventData)
-
-    const response = await fetch(`${socketServerUrl}/api/emit`, {
+    const response = await fetch(`${SOCKET_URL}/api/emit`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        eventType,
-        eventData
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventType, eventData })
     })
-
-    if (!response.ok) {
-      console.error(`Failed to emit socket event: ${response.statusText}`)
-      return false
-    }
-
-    return true
+    return response.ok
   } catch (error) {
     console.error("Error emitting socket event:", error)
     return false
@@ -52,20 +24,11 @@ export const GET = withErrorHandlerNoReq(async () => {
   today.setHours(0, 0, 0, 0)
 
   const queues = await prisma.queue.findMany({
-    where: {
-      date: {
-        gte: today
-      }
-    },
-    orderBy: {
-      number: "asc"
-    },
-    include: {
-      servedBy: true
-    }
+    where: { date: { gte: today } },
+    orderBy: { number: "asc" },
+    include: { servedBy: true }
   })
 
-  // Add cache control headers - cache for 1 second to reduce polling impact
   return new NextResponse(JSON.stringify(queues), {
     status: 200,
     headers: {
@@ -76,57 +39,44 @@ export const GET = withErrorHandlerNoReq(async () => {
 })
 
 // POST /api/queues - Membuat antrean baru
-export const POST = withErrorHandlerNoReq(async () => {
+export const POST = withErrorHandler(async (req: NextRequest) => {
+  const body = await req.json().catch(() => ({}))
+  const queueType: "OPERATOR" | "VERIFIKATOR" =
+    body.queueType === "VERIFIKATOR" ? "VERIFIKATOR" : "OPERATOR"
+
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
-  // Mendapatkan pengaturan untuk batas antrean harian
   const settings = (await prisma.setting.findFirst({
     where: { id: "default" }
-  })) || { dailyQueueLimit: 100, startNumber: 1 }
+  })) || { dailyQueueLimit: 200, startNumber: 1 }
 
-  // Menghitung jumlah antrean yang sudah ada hari ini
+  // Hitung antrian berdasarkan tipe
   const queueCount = await prisma.queue.count({
-    where: {
-      date: {
-        gte: today
-      }
-    }
+    where: { date: { gte: today }, queueType }
   })
 
-  // Memeriksa apakah sudah mencapai batas
   if (queueCount >= settings.dailyQueueLimit) {
     return NextResponse.json(
-      { error: "Antrean hari ini sudah penuh" },
+      {
+        error: `Antrean ${queueType === "VERIFIKATOR" ? "verifikator" : "operator"} hari ini sudah penuh`
+      },
       { status: 400 }
     )
   }
 
-  // Mendapatkan nomor antrean terakhir
+  // Nomor antrean reset per tipe per hari
   const lastQueue = await prisma.queue.findFirst({
-    where: {
-      date: {
-        gte: today
-      }
-    },
-    orderBy: {
-      number: "desc"
-    }
+    where: { date: { gte: today }, queueType },
+    orderBy: { number: "desc" }
   })
 
   const nextNumber = lastQueue ? lastQueue.number + 1 : settings.startNumber
 
-  // Membuat antrean baru
   const queue = await prisma.queue.create({
-    data: {
-      number: nextNumber,
-      date: today
-    }
+    data: { number: nextNumber, queueType, date: today }
   })
 
-  console.log("Created new queue:", queue)
-
-  // Emit Socket.io event for queue update
   await emitSocketEvent("queue-update", {
     type: "QUEUE_CREATED",
     queue,

@@ -2,29 +2,16 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { withErrorHandler, withErrorHandlerNoReq } from "../middleware"
 
-// Function to emit socket event
-async function emitSocketEvent(eventType: string, eventData: any) {
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4010"
+
+async function emitSocketEvent(eventType: string, eventData: object) {
   try {
-    const socketServerUrl =
-      process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
-
-    const response = await fetch(`${socketServerUrl}/api/emit`, {
+    const response = await fetch(`${SOCKET_URL}/api/emit`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        eventType,
-        eventData
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventType, eventData })
     })
-
-    if (!response.ok) {
-      console.error(`Failed to emit socket event: ${response.statusText}`)
-      return false
-    }
-
-    return true
+    return response.ok
   } catch (error) {
     console.error("Error emitting socket event:", error)
     return false
@@ -34,21 +21,15 @@ async function emitSocketEvent(eventType: string, eventData: any) {
 // GET /api/counters - Mendapatkan semua loket
 export const GET = withErrorHandlerNoReq(async () => {
   const counters = await prisma.counter.findMany({
-    include: {
-      currentQueue: true
-    },
-    orderBy: {
-      number: "asc"
-    }
+    include: { currentQueue: true },
+    orderBy: [{ counterType: "asc" }, { number: "asc" }]
   })
 
-  // Add cache control headers - cache for 3 seconds to reduce polling impact
   return new NextResponse(JSON.stringify(counters), {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      "Cache-Control":
-        "public, max-age=3, s-maxage=3, stale-while-revalidate=10"
+      "Cache-Control": "no-store"
     }
   })
 })
@@ -56,7 +37,7 @@ export const GET = withErrorHandlerNoReq(async () => {
 // POST /api/counters - Membuat loket baru
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const body = await req.json()
-  const { name, number } = body
+  const { name, number, counterType = "OPERATOR" } = body
 
   if (!name || !number) {
     return NextResponse.json(
@@ -65,28 +46,29 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     )
   }
 
-  // Memeriksa apakah nomor loket sudah digunakan
+  if (counterType !== "OPERATOR" && counterType !== "VERIFIKATOR") {
+    return NextResponse.json(
+      { error: "Tipe loket tidak valid" },
+      { status: 400 }
+    )
+  }
+
+  // Cek duplikasi nomor dalam tipe yang sama
   const existingCounter = await prisma.counter.findFirst({
-    where: {
-      number
-    }
+    where: { number, counterType }
   })
 
   if (existingCounter) {
     return NextResponse.json(
-      { error: "Nomor loket sudah digunakan" },
+      { error: `Nomor ${counterType === "VERIFIKATOR" ? "verifikator" : "operator"} ${number} sudah digunakan` },
       { status: 400 }
     )
   }
 
   const counter = await prisma.counter.create({
-    data: {
-      name,
-      number
-    }
+    data: { name, number, counterType }
   })
 
-  // Emit socket event for counter creation
   await emitSocketEvent("counter-update", {
     type: "COUNTER_CREATED",
     counter,

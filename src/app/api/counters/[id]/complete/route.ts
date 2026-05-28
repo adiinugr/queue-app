@@ -2,54 +2,19 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { withErrorHandler } from "@/app/api/middleware"
 
-// Define type for socket event data
-interface SocketEventData {
-  type: string
-  queue?: {
-    id: string
-    number: number
-    status: string
-    counterServingId: string | null
-  }
-  counter?: {
-    id: string
-    name: string
-    number: number
-    isActive: boolean
-    currentQueue: null | {
-      id: string
-      number: number
-      status: string
-    }
-  }
-  counterId?: string
-  timestamp?: number
-}
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4010"
 
-// Function to emit socket event
-async function emitSocketEvent(eventType: string, eventData: SocketEventData) {
+async function emitSocketEvent(eventType: string, eventData: object) {
   try {
-    const socketServerUrl =
-      process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001"
-
-    console.log(`Emitting ${eventType} event:`, eventData)
-
-    const response = await fetch(`${socketServerUrl}/api/emit`, {
+    const response = await fetch(`${SOCKET_URL}/api/emit`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        eventType,
-        eventData
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventType, eventData })
     })
-
     if (!response.ok) {
       console.error(`Failed to emit socket event: ${response.statusText}`)
       return false
     }
-
     return true
   } catch (error) {
     console.error("Error emitting socket event:", error)
@@ -57,52 +22,43 @@ async function emitSocketEvent(eventType: string, eventData: SocketEventData) {
   }
 }
 
-// POST /api/counters/[id]/complete - Menyelesaikan layanan untuk antrean saat ini
+// POST /api/counters/[id]/complete
+// Body: { issueOperatorTicket?: boolean }
+// Jika issueOperatorTicket=true (hanya untuk VERIFIKATOR), setelah selesai otomatis buat nomor operator baru
 export const POST = withErrorHandler(
   async (req: NextRequest, { params }: { params: { id: string } }) => {
     const { id } = params
+    const body = await req.json().catch(() => ({}))
+    const issueOperatorTicket: boolean = body.issueOperatorTicket === true
 
-    // Memeriksa apakah loket ada
     const counter = await prisma.counter.findUnique({
       where: { id },
       include: { currentQueue: true }
     })
 
     if (!counter) {
-      return NextResponse.json(
-        { error: "Loket tidak ditemukan" },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: "Loket tidak ditemukan" }, { status: 404 })
     }
 
-    // Memeriksa apakah loket memiliki antrean yang sedang dilayani
     if (!counter.currentQueue) {
       return NextResponse.json(
-        { error: "Loket tidak sedang melayani antrean" },
+        { error: "Loket tidak sedang melayani antrian" },
         { status: 400 }
       )
     }
 
-    // Menyimpan ID antrean saat ini
     const currentQueueId = counter.currentQueue.id
 
-    // Update antrean menjadi selesai dan menambahkan ke riwayat loket
+    // Selesaikan antrian saat ini
     const updatedQueue = await prisma.queue.update({
       where: { id: currentQueueId },
       data: {
         status: "COMPLETED",
-        counterServingId: null, // Melepaskan dari loket saat ini
-        historyCounters: {
-          connect: {
-            id: counter.id
-          }
-        }
+        counterServingId: null,
+        historyCounters: { connect: { id: counter.id } }
       }
     })
 
-    console.log("Queue completed in API:", updatedQueue)
-
-    // Emit Socket.io event for queue update
     await emitSocketEvent("queue-update", {
       type: "QUEUE_COMPLETED",
       queue: updatedQueue,
@@ -110,25 +66,60 @@ export const POST = withErrorHandler(
         id: counter.id,
         name: counter.name,
         number: counter.number,
+        counterType: counter.counterType,
         isActive: counter.isActive,
         currentQueue: null
       },
       timestamp: Date.now()
     })
 
-    // Also emit a counter-update event
     await emitSocketEvent("counter-update", {
       type: "COUNTER_UPDATED",
       counter: {
         id: counter.id,
         name: counter.name,
         number: counter.number,
+        counterType: counter.counterType,
         isActive: counter.isActive,
         currentQueue: null
       },
       timestamp: Date.now()
     })
 
-    return NextResponse.json(updatedQueue)
+    // Jika verifikator meminta terbitkan nomor operator
+    let operatorQueue = null
+    if (issueOperatorTicket && counter.counterType === "VERIFIKATOR") {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+
+      const settings = (await prisma.setting.findFirst({
+        where: { id: "default" }
+      })) || { dailyQueueLimit: 200, startNumber: 1 }
+
+      const opCount = await prisma.queue.count({
+        where: { date: { gte: today }, queueType: "OPERATOR" }
+      })
+
+      if (opCount < settings.dailyQueueLimit) {
+        const lastOpQueue = await prisma.queue.findFirst({
+          where: { date: { gte: today }, queueType: "OPERATOR" },
+          orderBy: { number: "desc" }
+        })
+
+        const nextNumber = lastOpQueue ? lastOpQueue.number + 1 : settings.startNumber
+
+        operatorQueue = await prisma.queue.create({
+          data: { number: nextNumber, queueType: "OPERATOR", date: today }
+        })
+
+        await emitSocketEvent("queue-update", {
+          type: "QUEUE_CREATED",
+          queue: operatorQueue,
+          timestamp: Date.now()
+        })
+      }
+    }
+
+    return NextResponse.json({ completedQueue: updatedQueue, operatorQueue })
   }
 )

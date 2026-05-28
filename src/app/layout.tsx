@@ -1,25 +1,28 @@
 import type { Metadata } from "next"
 import "./globals.css"
-import { inter, nunito } from "./fonts"
+import { inter, nunito, plusJakarta, oswald } from "./fonts"
 import ErrorBoundary from "./components/ErrorBoundary"
 
 export const metadata: Metadata = {
   title: {
-    template: "%s | Queue System",
-    default: "Queue System - Modern Queue Management"
+    template: "%s | Antrian SPMB Jatim 2026",
+    default: "Aplikasi Antrian SPMB Jatim Tahun 2026 SMAN 10 Surabaya"
   },
   description:
-    "Effective queue management system with digital interfaces, real-time updates, and voice announcements",
+    "Sistem manajemen antrian digital untuk SPMB Jatim Tahun 2026 di SMAN 10 Surabaya",
   keywords: [
+    "antrian",
+    "SPMB",
+    "Jatim",
+    "SMAN 10 Surabaya",
     "queue system",
-    "queue management",
-    "digital queue",
-    "antrean digital",
-    "loket management"
+    "antrean digital"
   ],
-  authors: [{ name: "Queue System Team" }],
-  creator: "Queue System",
-  publisher: "Queue System"
+  authors: [{ name: "SMAN 10 Surabaya" }],
+  icons: {
+    icon: "https://www.dbl.id/uploads/school/13138/810-SMAN_10_SURABAYA.png",
+    apple: "https://www.dbl.id/uploads/school/13138/810-SMAN_10_SURABAYA.png"
+  }
 }
 
 export default function RootLayout({
@@ -28,8 +31,10 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className={`${inter.variable} ${nunito.variable} antialiased`}>
+    <html lang="id">
+      <body
+        className={`${inter.variable} ${nunito.variable} ${plusJakarta.variable} ${oswald.variable} antialiased`}
+      >
         <ErrorBoundary>{children}</ErrorBoundary>
       </body>
     </html>

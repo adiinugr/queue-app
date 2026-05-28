@@ -1,7 +1,6 @@
 import { Metadata } from "next"
 
 export const metadata: Metadata = {
-  title: "Queue System - Counter Operator",
-  description:
-    "Counter operator interface for serving customers and managing the current queue"
+  title: "Panel Operator",
+  description: "Panel Operator/Verifikator - Aplikasi Antrian SPMB Jatim Tahun 2026 SMAN 10 Surabaya"
 }

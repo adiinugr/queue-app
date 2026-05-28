@@ -1,149 +1,125 @@
-import Link from "next/link"
-import type { Metadata } from "next"
+"use client"
 
-export const metadata: Metadata = {
-  title: "Queue System - Home",
-  description:
-    "Modern queue management system for businesses with digital interfaces and real-time updates"
-}
+import Link from "next/link"
+import Image from "next/image"
 
 export default function HomePage() {
   return (
-    <div className="flex min-h-screen flex-col bg-white">
-      {/* Airbnb-style Header */}
-      <header className="border-b border-gray-100 py-4 sticky top-0 bg-white z-10 shadow-sm">
-        <div className="container mx-auto px-6">
-          <div className="flex items-center justify-between">
-            {/* Logo - centered on mobile, left on desktop */}
-            <div className="flex-1 flex md:justify-start justify-center md:order-1 order-2">
-              <div className="text-2xl font-nunito font-semibold text-gray-800">
-                <span className="text-rose-500">Q</span>ueue
-              </div>
-            </div>
+    <div
+      className="min-h-screen flex flex-col items-center justify-center"
+      style={{ background: "linear-gradient(160deg, #0A1628 0%, #0D1F35 100%)" }}
+    >
+      {/* Background glow */}
+      <div
+        className="fixed inset-0 pointer-events-none"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 30% 30%, rgba(26,86,219,0.1) 0%, transparent 60%), radial-gradient(circle at 70% 70%, rgba(13,148,136,0.07) 0%, transparent 60%)"
+        }}
+      />
 
-            {/* Navigation - hidden on mobile */}
-            <nav className="hidden md:flex justify-center flex-1 md:order-2 order-1">
-              <ul className="flex space-x-8 font-inter text-sm">
-                <li>
-                  <Link href="/" className="text-gray-800 hover:text-rose-500">
-                    Home
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/admin"
-                    className="text-gray-800 hover:text-rose-500"
-                  >
-                    Admin
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="/display"
-                    className="text-gray-800 hover:text-rose-500"
-                  >
-                    Display
-                  </Link>
-                </li>
-              </ul>
-            </nav>
-
-            {/* Right section - Sign up/Profile */}
-            <div className="flex-1 flex justify-end md:order-3 order-3">
-              <Link
-                href="/admin"
-                className="flex items-center space-x-2 border border-gray-200 rounded-full px-4 py-2 hover:shadow-md transition-all duration-200"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 text-gray-600"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M4 6h16M4 12h16M4 18h16"
-                  />
-                </svg>
-                <div className="h-6 w-6 bg-rose-500 rounded-full flex items-center justify-center">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4 text-white"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
-                    />
-                  </svg>
-                </div>
-              </Link>
-            </div>
+      <div className="relative z-10 flex flex-col items-center gap-8 px-6">
+        {/* Logos */}
+        <div className="flex items-center gap-3">
+          <div
+            className="relative w-14 h-14 rounded-xl overflow-hidden"
+            style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)" }}
+          >
+            <Image
+              src="https://www.dbl.id/uploads/school/13138/810-SMAN_10_SURABAYA.png"
+              alt="SMAN 10 Surabaya"
+              fill
+              sizes="56px"
+              className="object-contain p-1.5"
+            />
+          </div>
+          <div
+            className="relative w-14 h-14 rounded-xl overflow-hidden"
+            style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)" }}
+          >
+            <Image
+              src="https://spmbjatim.net/images/logo.png"
+              alt="SPMB Jatim"
+              fill
+              sizes="56px"
+              className="object-contain p-1.5"
+            />
           </div>
         </div>
-      </header>
 
-      <main className="flex-1">
-        {/* Hero Section - Airbnb style */}
-        <section className="relative">
-          {/* Background image with overlay */}
-          <div className="relative h-[700px] w-full overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-black/40 to-black/20 z-10"></div>
-            <div
-              className="absolute inset-0 bg-cover bg-center"
-              style={{
-                backgroundImage:
-                  'url("https://images.unsplash.com/photo-1639548538099-6f7f9aec3b92?q=80&w=2586&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D")'
-              }}
-            >
-              {/* Fallback for browsers with style issues */}
-              <div className="absolute inset-0 bg-gray-900/30"></div>
-            </div>
-            <div className="container mx-auto px-6 relative z-20 h-full flex flex-col justify-center">
-              <div className="max-w-2xl">
-                <h1 className="text-5xl md:text-6xl font-bold text-white font-inter mb-6 tracking-tight">
-                  Queue management,
-                  <span className="block"> reimagined.</span>
-                </h1>
-                <p className="text-xl text-white/90 font-inter font-light mb-10 max-w-lg">
-                  Modern queue system for businesses with real-time updates and
-                  digital interfaces.
-                </p>
-                <div className="flex flex-wrap gap-4">
-                  <Link
-                    href="/admin"
-                    className="rounded-lg bg-rose-500 px-7 py-3.5 font-inter font-medium text-white hover:bg-rose-600 transition-all duration-200"
-                  >
-                    Mulai
-                  </Link>
-                  <Link
-                    href="/display"
-                    className="rounded-lg border border-white px-7 py-3.5 font-inter font-medium text-white hover:bg-white/10 transition-all duration-200"
-                  >
-                    Lihat Antrian
-                  </Link>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-
-      {/* Simplified Footer */}
-      <footer className="bg-gray-50 border-t border-gray-100 py-6">
-        <div className="container mx-auto px-6 text-center">
-          <p className="text-gray-500 text-sm font-inter">
-            &copy; {new Date().getFullYear()} Queue System. All rights reserved.
+        {/* Title */}
+        <div className="text-center">
+          <h1
+            className="text-2xl font-bold text-white mb-1"
+            style={{ fontFamily: "var(--font-jakarta)" }}
+          >
+            Aplikasi Antrian SPMB Jatim 2026
+          </h1>
+          <p className="text-sm" style={{ color: "rgba(255,255,255,0.45)", fontFamily: "var(--font-jakarta)" }}>
+            SMAN 10 Surabaya
           </p>
         </div>
-      </footer>
+
+        {/* Navigation cards */}
+        <div className="flex flex-col sm:flex-row gap-4 w-full max-w-sm">
+          <Link
+            href="/display"
+            className="flex-1 flex flex-col items-center gap-3 px-6 py-7 rounded-2xl transition-all duration-200 hover:scale-[1.03] hover:shadow-2xl"
+            style={{
+              background: "rgba(26,86,219,0.15)",
+              border: "1px solid rgba(59,130,246,0.35)"
+            }}
+          >
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center"
+              style={{ background: "rgba(26,86,219,0.3)" }}
+            >
+              <svg className="w-6 h-6" style={{ color: "#93C5FD" }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <p className="text-base font-bold text-white" style={{ fontFamily: "var(--font-jakarta)" }}>
+                Display
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-jakarta)" }}>
+                Layar antrian publik
+              </p>
+            </div>
+          </Link>
+
+          <Link
+            href="/admin"
+            className="flex-1 flex flex-col items-center gap-3 px-6 py-7 rounded-2xl transition-all duration-200 hover:scale-[1.03] hover:shadow-2xl"
+            style={{
+              background: "rgba(255,255,255,0.05)",
+              border: "1px solid rgba(255,255,255,0.12)"
+            }}
+          >
+            <div
+              className="w-12 h-12 rounded-xl flex items-center justify-center"
+              style={{ background: "rgba(255,255,255,0.1)" }}
+            >
+              <svg className="w-6 h-6" style={{ color: "rgba(255,255,255,0.7)" }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <div className="text-center">
+              <p className="text-base font-bold text-white" style={{ fontFamily: "var(--font-jakarta)" }}>
+                Admin
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-jakarta)" }}>
+                Panel pengelolaan
+              </p>
+            </div>
+          </Link>
+        </div>
+
+        <p className="text-xs" style={{ color: "rgba(255,255,255,0.2)", fontFamily: "var(--font-jakarta)" }} suppressHydrationWarning>
+          &copy; {new Date().getFullYear()} Aplikasi Antrian SPMB Jatim 2026 &middot; SMAN 10 Surabaya
+        </p>
+      </div>
     </div>
   )
 }

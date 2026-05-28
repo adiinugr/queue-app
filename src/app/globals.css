@@ -1,6 +1,24 @@
 @import "tailwindcss";
 
 :root {
+  --blue-deepest: #0D1F35;
+  --blue-dark: #1A3A5C;
+  --blue-navy: #1E4D8C;
+  --blue-primary: #1A56DB;
+  --blue-medium: #3B82F6;
+  --blue-light: #93C5FD;
+  --blue-pale: #EFF6FF;
+
+  --teal-dark: #0F5A50;
+  --teal-primary: #0D9488;
+  --teal-medium: #14B8A6;
+  --teal-light: #5EEAD4;
+  --teal-pale: #F0FDFA;
+
+  --amber-alert: #F59E0B;
+  --green-serving: #10B981;
+  --gray-idle: #6B7280;
+
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 214, 219, 220;
   --background-end-rgb: 255, 255, 255;
@@ -20,4 +38,30 @@
 
 .font-nunito {
   font-family: var(--font-nunito);
+}
+
+.font-jakarta {
+  font-family: var(--font-jakarta);
+}
+
+.font-oswald {
+  font-family: var(--font-oswald);
+}
+
+@keyframes pulse-called {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+
+.animate-pulse-called {
+  animation: pulse-called 1.5s ease-in-out infinite;
+}
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.4s ease-out forwards;
 }

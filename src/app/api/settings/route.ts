@@ -2,18 +2,33 @@ import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { withErrorHandler, withErrorHandlerNoReq } from "../middleware"
 
+const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4010"
+
+async function emitSocketEvent(eventType: string, eventData: object) {
+  try {
+    const response = await fetch(`${SOCKET_URL}/api/emit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eventType, eventData })
+    })
+    return response.ok
+  } catch (error) {
+    console.error("Error emitting socket event:", error)
+    return false
+  }
+}
+
 // GET /api/settings - Mendapatkan pengaturan sistem
 export const GET = withErrorHandlerNoReq(async () => {
   const settings = await prisma.setting.findFirst({
     where: { id: "default" }
   })
 
-  // Jika belum ada pengaturan, buat pengaturan default
   if (!settings) {
     const defaultSettings = await prisma.setting.create({
       data: {
         id: "default",
-        dailyQueueLimit: 100,
+        dailyQueueLimit: 200,
         startNumber: 1,
         resetQueueDaily: true,
         allowSimultaneous: false,
@@ -48,12 +63,18 @@ export const PUT = withErrorHandler(async (req: NextRequest) => {
     },
     create: {
       id: "default",
-      dailyQueueLimit: dailyQueueLimit ?? 100,
+      dailyQueueLimit: dailyQueueLimit ?? 200,
       startNumber: startNumber ?? 1,
       resetQueueDaily: resetQueueDaily ?? true,
       allowSimultaneous: allowSimultaneous ?? false,
       videoUrl: videoUrl ?? "https://www.youtube.com/embed/jAQvxW2l-Pg"
     }
+  })
+
+  // Emit settings-update event for real-time video URL changes on display
+  await emitSocketEvent("settings-update", {
+    ...settings,
+    timestamp: Date.now()
   })
 
   return NextResponse.json(settings)
