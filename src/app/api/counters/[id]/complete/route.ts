@@ -87,29 +87,22 @@ export const POST = withErrorHandler(
     })
 
     // Jika verifikator meminta terbitkan nomor operator
+    // Gunakan nomor yang sama dengan nomor verifikator agar konsisten
     let operatorQueue = null
     if (issueOperatorTicket && counter.counterType === "VERIFIKATOR") {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
 
-      const settings = (await prisma.setting.findFirst({
-        where: { id: "default" }
-      })) || { dailyQueueLimit: 200, startNumber: 1 }
+      const verifikatorNumber = counter.currentQueue.number
 
-      const opCount = await prisma.queue.count({
-        where: { date: { gte: today }, queueType: "OPERATOR" }
+      // Cek apakah nomor operator dengan angka yang sama sudah ada hari ini
+      const existing = await prisma.queue.findFirst({
+        where: { date: { gte: today }, queueType: "OPERATOR", number: verifikatorNumber }
       })
 
-      if (opCount < settings.dailyQueueLimit) {
-        const lastOpQueue = await prisma.queue.findFirst({
-          where: { date: { gte: today }, queueType: "OPERATOR" },
-          orderBy: { number: "desc" }
-        })
-
-        const nextNumber = lastOpQueue ? lastOpQueue.number + 1 : settings.startNumber
-
+      if (!existing) {
         operatorQueue = await prisma.queue.create({
-          data: { number: nextNumber, queueType: "OPERATOR", date: today }
+          data: { number: verifikatorNumber, queueType: "OPERATOR", date: today }
         })
 
         await emitSocketEvent("queue-update", {

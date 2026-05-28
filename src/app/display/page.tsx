@@ -69,6 +69,8 @@ export default function DisplayPage() {
   const [audioUnlocked, setAudioUnlocked] = useState(false)
   const [videoUrl, setVideoUrl] = useState("")
   const [isFullscreen, setIsFullscreen] = useState(false)
+  // Sticky map: counterId → active queue. Updated by socket events, never cleared by polling.
+  const [activeQueueByCounter, setActiveQueueByCounter] = useState<Record<string, Queue>>({})
 
   const countersRef = useRef<Counter[]>([])
   const announcedQueueIdsRef = useRef<Set<string>>(new Set())
@@ -128,31 +130,47 @@ export default function DisplayPage() {
 
   const handleQueueUpdate = useCallback(
     (data: QueueUpdateData) => {
+      if (data.type === "QUEUES_RESET") {
+        setQueues([])
+        setCounters((prev) => prev.map((c) => ({ ...c })))
+        setActiveQueueByCounter({})
+        return
+      }
+      if (!data.queue) return
+      const q = data.queue
       const key = getQueueUpdateKey(
         data.type,
-        data.queue.id,
+        q.id,
         data.timestamp || Date.now()
       )
       if (processedQueueUpdatesRef.current.has(key)) return
       processedQueueUpdatesRef.current.add(key)
       if (processedQueueUpdatesRef.current.size > 50) {
         const entries = Array.from(processedQueueUpdatesRef.current)
-        entries.slice(0, 25).forEach((k) => processedQueueUpdatesRef.current.delete(k))
+        entries
+          .slice(0, 25)
+          .forEach((k) => processedQueueUpdatesRef.current.delete(k))
       }
 
-      if (data.type === "QUEUE_CALLED" && !announcedQueueIdsRef.current.has(data.queue.id)) {
+      if (
+        data.type === "QUEUE_CALLED" &&
+        !announcedQueueIdsRef.current.has(q.id)
+      ) {
         const counter = countersRef.current.find(
-          (c) => c.id === data.queue.counterServingId
+          (c) => c.id === q.counterServingId
         )
         if (counter) {
-          const tipe = counter.counterType === "VERIFIKATOR" ? "verifikator" : "operator"
+          const tipe =
+            counter.counterType === "VERIFIKATOR" ? "verifikator" : "operator"
           speak(
-            `Nomor antrian ${data.queue.number}, silakan menuju meja ${tipe} ${counter.number}`
+            `Nomor antrian ${q.number}, silakan menuju meja ${tipe} ${counter.number}`
           )
-          announcedQueueIdsRef.current.add(data.queue.id)
+          announcedQueueIdsRef.current.add(q.id)
           if (announcedQueueIdsRef.current.size > 20) {
             const ids = Array.from(announcedQueueIdsRef.current)
-            ids.slice(0, 10).forEach((id) => announcedQueueIdsRef.current.delete(id))
+            ids
+              .slice(0, 10)
+              .forEach((id) => announcedQueueIdsRef.current.delete(id))
           }
         }
       }
@@ -169,20 +187,20 @@ export default function DisplayPage() {
 
       setQueues((prev) => {
         const qBase: Queue = {
-          id: data.queue.id,
-          number: data.queue.number,
-          queueType: data.queue.queueType || "OPERATOR",
-          status: data.queue.status,
-          counterServingId: data.queue.counterServingId,
+          id: q.id,
+          number: q.number,
+          queueType: q.queueType || "OPERATOR",
+          status: q.status,
+          counterServingId: q.counterServingId,
           servedBy: updatedCounter,
           updatedAt: data.timestamp || Date.now()
         }
-        const idx = prev.findIndex((q) => q.id === data.queue.id)
+        const idx = prev.findIndex((item) => item.id === q.id)
         if (idx !== -1) {
-          return prev.map((q) =>
-            q.id === data.queue.id
-              ? { ...q, ...qBase, servedBy: updatedCounter || q.servedBy }
-              : q
+          return prev.map((item) =>
+            item.id === q.id
+              ? { ...item, ...qBase, servedBy: updatedCounter || item.servedBy }
+              : item
           )
         }
         return [...prev, qBase]
@@ -192,9 +210,31 @@ export default function DisplayPage() {
         setCounters((prev) => {
           const idx = prev.findIndex((c) => c.id === updatedCounter.id)
           if (idx !== -1) {
-            return prev.map((c) => (c.id === updatedCounter.id ? updatedCounter : c))
+            return prev.map((c) =>
+              c.id === updatedCounter.id ? updatedCounter : c
+            )
           }
           return [...prev, updatedCounter]
+        })
+      }
+
+      // Maintain sticky active display — not affected by polling
+      if (data.type === "QUEUE_CALLED" && q.counterServingId) {
+        const qObj: Queue = {
+          id: q.id,
+          number: q.number,
+          queueType: q.queueType || "OPERATOR",
+          status: q.status,
+          counterServingId: q.counterServingId,
+          servedBy: updatedCounter,
+          updatedAt: data.timestamp || Date.now()
+        }
+        setActiveQueueByCounter((prev) => ({ ...prev, [q.counterServingId!]: qObj }))
+      } else if (data.type === "QUEUE_COMPLETED" && data.counter) {
+        setActiveQueueByCounter((prev) => {
+          const next = { ...prev }
+          delete next[data.counter!.id]
+          return next
         })
       }
     },
@@ -203,7 +243,8 @@ export default function DisplayPage() {
 
   const handleRecallEvent = useCallback(
     (data: RecallEventData) => {
-      const tipe = data.counterType === "VERIFIKATOR" ? "verifikator" : "operator"
+      const tipe =
+        data.counterType === "VERIFIKATOR" ? "verifikator" : "operator"
       speak(
         `Pemanggilan ulang, nomor antrian ${data.queueNumber}, silakan menuju meja ${tipe} ${data.counterNumber}`
       )
@@ -238,6 +279,30 @@ export default function DisplayPage() {
       setCounters(countersData)
       countersRef.current = countersData
 
+      // Sync sticky map: add newly active, remove completed
+      setActiveQueueByCounter((prev) => {
+        const updated = { ...prev }
+        let changed = false
+        // Add active queues discovered by polling (e.g. on initial load)
+        for (const q of queuesData as Queue[]) {
+          if ((q.status === "CALLED" || q.status === "SERVING") && q.counterServingId) {
+            if (!updated[q.counterServingId]) {
+              updated[q.counterServingId] = q
+              changed = true
+            }
+          }
+        }
+        // Remove queues that are now completed/gone
+        for (const [cId, q] of Object.entries(updated)) {
+          const fresh = (queuesData as Queue[]).find((fq) => fq.id === q.id)
+          if (!fresh || fresh.status === "COMPLETED" || fresh.status === "SKIPPED") {
+            delete updated[cId]
+            changed = true
+          }
+        }
+        return changed ? updated : prev
+      })
+
       if (settingsRes.ok) {
         const settingsData = await settingsRes.json()
         if (settingsData.videoUrl) {
@@ -263,8 +328,8 @@ export default function DisplayPage() {
       clearInterval(timeInterval)
       clearInterval(pollInterval)
     }
-  // fetchData is stable (empty deps)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // fetchData is stable (empty deps)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -276,7 +341,11 @@ export default function DisplayPage() {
   )
 
   const formatTime = (d: Date) =>
-    d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    d.toLocaleTimeString("id-ID", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    })
 
   const formatDate = (d: Date) =>
     d.toLocaleDateString("id-ID", {
@@ -299,7 +368,9 @@ export default function DisplayPage() {
   // Build display arrays: 10 operators, 5 verifikators
   const operatorCounters = Array.from({ length: 10 }, (_, i) => {
     return (
-      counters.find((c) => c.counterType === "OPERATOR" && c.number === i + 1) || {
+      counters.find(
+        (c) => c.counterType === "OPERATOR" && c.number === i + 1
+      ) || {
         id: `op-placeholder-${i + 1}`,
         name: `Operator ${i + 1}`,
         number: i + 1,
@@ -311,7 +382,9 @@ export default function DisplayPage() {
 
   const verifikatorCounters = Array.from({ length: 5 }, (_, i) => {
     return (
-      counters.find((c) => c.counterType === "VERIFIKATOR" && c.number === i + 1) || {
+      counters.find(
+        (c) => c.counterType === "VERIFIKATOR" && c.number === i + 1
+      ) || {
         id: `vr-placeholder-${i + 1}`,
         name: `Verifikator ${i + 1}`,
         number: i + 1,
@@ -332,8 +405,12 @@ export default function DisplayPage() {
     counter: (typeof operatorCounters)[0]
     isVerifikator: boolean
   }) => {
-    const activeQueue = calledQueues.find((q) => q.counterServingId === counter.id)
-    const isPlaceholder = counter.id.startsWith("op-placeholder-") || counter.id.startsWith("vr-placeholder-")
+    const activeQueue =
+      activeQueueByCounter[counter.id] ||
+      calledQueues.find((q) => q.counterServingId === counter.id)
+    const isPlaceholder =
+      counter.id.startsWith("op-placeholder-") ||
+      counter.id.startsWith("vr-placeholder-")
     const isCalled = activeQueue?.status === "CALLED"
     const isServing = activeQueue?.status === "SERVING"
 
@@ -341,11 +418,17 @@ export default function DisplayPage() {
       header: isCalled
         ? "linear-gradient(135deg, #B45309, #D97706)"
         : isServing
-        ? "linear-gradient(135deg, #059669, #10B981)"
-        : isPlaceholder
-        ? "linear-gradient(135deg, #374151, #4B5563)"
-        : "linear-gradient(135deg, #1D4ED8, #2563EB)",
-      border: isCalled ? "#F59E0B" : isServing ? "#10B981" : isPlaceholder ? "#374151" : "#3B82F6",
+          ? "linear-gradient(135deg, #059669, #10B981)"
+          : isPlaceholder
+            ? "linear-gradient(135deg, #374151, #4B5563)"
+            : "linear-gradient(135deg, #1D4ED8, #2563EB)",
+      border: isCalled
+        ? "#F59E0B"
+        : isServing
+          ? "#10B981"
+          : isPlaceholder
+            ? "#374151"
+            : "#3B82F6",
       bg: isCalled ? "#2A1F05" : isServing ? "#052A1A" : "#0D1F35",
       numColor: isCalled ? "#FCD34D" : isServing ? "#6EE7B7" : "#93C5FD"
     }
@@ -353,11 +436,17 @@ export default function DisplayPage() {
       header: isCalled
         ? "linear-gradient(135deg, #B45309, #D97706)"
         : isServing
-        ? "linear-gradient(135deg, #059669, #10B981)"
-        : isPlaceholder
-        ? "linear-gradient(135deg, #374151, #4B5563)"
-        : "linear-gradient(135deg, #0F766E, #0D9488)",
-      border: isCalled ? "#F59E0B" : isServing ? "#10B981" : isPlaceholder ? "#374151" : "#14B8A6",
+          ? "linear-gradient(135deg, #059669, #10B981)"
+          : isPlaceholder
+            ? "linear-gradient(135deg, #374151, #4B5563)"
+            : "linear-gradient(135deg, #0F766E, #0D9488)",
+      border: isCalled
+        ? "#F59E0B"
+        : isServing
+          ? "#10B981"
+          : isPlaceholder
+            ? "#374151"
+            : "#14B8A6",
       bg: isCalled ? "#2A1F05" : isServing ? "#052A1A" : "#0D1F35",
       numColor: isCalled ? "#FCD34D" : isServing ? "#6EE7B7" : "#5EEAD4"
     }
@@ -372,8 +461,8 @@ export default function DisplayPage() {
           boxShadow: isCalled
             ? `0 0 20px rgba(245,158,11,0.3)`
             : isServing
-            ? `0 0 20px rgba(16,185,129,0.3)`
-            : "none"
+              ? `0 0 20px rgba(16,185,129,0.3)`
+              : "none"
         }}
       >
         {/* Card header */}
@@ -385,7 +474,8 @@ export default function DisplayPage() {
             className="text-xs font-bold text-white uppercase tracking-wider"
             style={{ fontFamily: "var(--font-jakarta)" }}
           >
-            {isVerifikator ? "V" : ""}{counter.number}
+            {isVerifikator ? "V" : ""}
+            {counter.number}
           </span>
         </div>
 
@@ -438,7 +528,8 @@ export default function DisplayPage() {
     <div
       className="h-screen overflow-hidden flex flex-col"
       style={{
-        background: "linear-gradient(160deg, #0A1628 0%, #0D1F35 50%, #0A1628 100%)"
+        background:
+          "linear-gradient(160deg, #0A1628 0%, #0D1F35 50%, #0A1628 100%)"
       }}
     >
       <Toaster position="top-center" />
@@ -447,7 +538,10 @@ export default function DisplayPage() {
       {!audioUnlocked && (
         <div
           className="fixed inset-0 z-50 flex flex-col items-center justify-center cursor-pointer"
-          style={{ background: "rgba(10,22,40,0.97)", backdropFilter: "blur(4px)" }}
+          style={{
+            background: "rgba(10,22,40,0.97)",
+            backdropFilter: "blur(4px)"
+          }}
           onClick={unlockAudio}
         >
           <div
@@ -459,7 +553,10 @@ export default function DisplayPage() {
           >
             <div
               className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-5"
-              style={{ background: "rgba(26,86,219,0.2)", border: "1px solid rgba(59,130,246,0.4)" }}
+              style={{
+                background: "rgba(26,86,219,0.2)",
+                border: "1px solid rgba(59,130,246,0.4)"
+              }}
             >
               <Volume2 size={28} className="text-blue-400" />
             </div>
@@ -471,13 +568,20 @@ export default function DisplayPage() {
             </p>
             <p
               className="text-sm"
-              style={{ color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-jakarta)" }}
+              style={{
+                color: "rgba(255,255,255,0.5)",
+                fontFamily: "var(--font-jakarta)"
+              }}
             >
-              Klik di mana saja untuk mengaktifkan tampilan antrian dan pengumuman suara
+              Klik di mana saja untuk mengaktifkan tampilan antrian dan
+              pengumuman suara
             </p>
             <div
               className="mt-5 w-full py-3 rounded-xl text-sm font-semibold text-white"
-              style={{ background: "linear-gradient(135deg, #1D4ED8, #1A56DB)", fontFamily: "var(--font-jakarta)" }}
+              style={{
+                background: "linear-gradient(135deg, #1D4ED8, #1A56DB)",
+                fontFamily: "var(--font-jakarta)"
+              }}
             >
               Aktifkan Tampilan
             </div>
@@ -518,7 +622,10 @@ export default function DisplayPage() {
             </p>
             <p
               className="text-xs"
-              style={{ color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-jakarta)" }}
+              style={{
+                color: "rgba(255,255,255,0.5)",
+                fontFamily: "var(--font-jakarta)"
+              }}
             >
               SMAN 10 Surabaya
             </p>
@@ -544,7 +651,8 @@ export default function DisplayPage() {
             <div
               className="px-3 py-2 flex items-center gap-2 flex-shrink-0"
               style={{
-                background: "linear-gradient(90deg, rgba(26,86,219,0.6), rgba(26,86,219,0.2))",
+                background:
+                  "linear-gradient(90deg, rgba(26,86,219,0.6), rgba(26,86,219,0.2))",
                 borderBottom: "1px solid rgba(59,130,246,0.3)"
               }}
             >
@@ -560,14 +668,21 @@ export default function DisplayPage() {
               </span>
               <span
                 className="ml-auto text-xs"
-                style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-jakarta)" }}
+                style={{
+                  color: "rgba(255,255,255,0.4)",
+                  fontFamily: "var(--font-jakarta)"
+                }}
               >
                 10 Loket
               </span>
             </div>
             <div className="grid grid-cols-5 gap-2 p-2 flex-1 auto-rows-fr">
               {operatorCounters.map((counter) => (
-                <CounterCard key={counter.id} counter={counter} isVerifikator={false} />
+                <CounterCard
+                  key={counter.id}
+                  counter={counter}
+                  isVerifikator={false}
+                />
               ))}
             </div>
           </div>
@@ -584,7 +699,8 @@ export default function DisplayPage() {
             <div
               className="px-3 py-2 flex items-center gap-2 flex-shrink-0"
               style={{
-                background: "linear-gradient(90deg, rgba(13,148,136,0.6), rgba(13,148,136,0.2))",
+                background:
+                  "linear-gradient(90deg, rgba(13,148,136,0.6), rgba(13,148,136,0.2))",
                 borderBottom: "1px solid rgba(20,184,166,0.3)"
               }}
             >
@@ -600,14 +716,21 @@ export default function DisplayPage() {
               </span>
               <span
                 className="ml-auto text-xs"
-                style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-jakarta)" }}
+                style={{
+                  color: "rgba(255,255,255,0.4)",
+                  fontFamily: "var(--font-jakarta)"
+                }}
               >
                 5 Loket
               </span>
             </div>
             <div className="grid grid-cols-5 gap-2 p-2 flex-1 auto-rows-fr">
               {verifikatorCounters.map((counter) => (
-                <CounterCard key={counter.id} counter={counter} isVerifikator={true} />
+                <CounterCard
+                  key={counter.id}
+                  counter={counter}
+                  isVerifikator={true}
+                />
               ))}
             </div>
           </div>
@@ -626,7 +749,10 @@ export default function DisplayPage() {
                 />
                 <span
                   className="text-xs"
-                  style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-jakarta)" }}
+                  style={{
+                    color: "rgba(255,255,255,0.4)",
+                    fontFamily: "var(--font-jakarta)"
+                  }}
                 >
                   {item.label}
                 </span>
@@ -647,7 +773,7 @@ export default function DisplayPage() {
           >
             <div className="flex items-center gap-3 mb-3">
               <div className="flex gap-2">
-                <div className="relative w-10 h-10 bg-white rounded-lg overflow-hidden p-1">
+                <div className="relative w-10 h-12 bg-white rounded-lg overflow-hidden p-2">
                   <Image
                     src="https://www.dbl.id/uploads/school/13138/810-SMAN_10_SURABAYA.png"
                     alt="SMAN 10"
@@ -656,7 +782,7 @@ export default function DisplayPage() {
                     className="object-contain"
                   />
                 </div>
-                <div className="relative w-10 h-10 bg-white rounded-lg overflow-hidden p-1">
+                <div className="relative w-10 h-12 bg-white rounded-lg overflow-hidden p-2">
                   <Image
                     src="https://spmbjatim.net/images/logo.png"
                     alt="SPMB Jatim"
@@ -675,7 +801,10 @@ export default function DisplayPage() {
                 </p>
                 <p
                   className="text-sm"
-                  style={{ color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-jakarta)" }}
+                  style={{
+                    color: "rgba(255,255,255,0.5)",
+                    fontFamily: "var(--font-jakarta)"
+                  }}
                 >
                   SMAN 10 Surabaya
                 </p>
@@ -694,7 +823,10 @@ export default function DisplayPage() {
               </div>
               <div
                 className="text-sm capitalize mt-1"
-                style={{ color: "rgba(255,255,255,0.5)", fontFamily: "var(--font-jakarta)" }}
+                style={{
+                  color: "rgba(255,255,255,0.5)",
+                  fontFamily: "var(--font-jakarta)"
+                }}
               >
                 {formatDate(currentTime)}
               </div>
@@ -725,7 +857,10 @@ export default function DisplayPage() {
         <button
           onClick={toggleFullScreen}
           className="p-2 rounded-full text-white transition-all hover:scale-110"
-          style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(8px)" }}
+          style={{
+            background: "rgba(255,255,255,0.15)",
+            backdropFilter: "blur(8px)"
+          }}
           aria-label="Toggle fullscreen"
         >
           {isFullscreen ? <Shrink size={18} /> : <Expand size={18} />}

@@ -114,7 +114,14 @@ export const POST = withErrorHandler(
     await emitSocketEvent("queue-update", {
       type: "QUEUE_CALLED",
       queue: updatedQueue,
-      counter,
+      counter: {
+        id: counter.id,
+        name: counter.name,
+        number: counter.number,
+        counterType: counter.counterType,
+        isActive: counter.isActive,
+        currentQueue: updatedQueue
+      },
       timestamp: Date.now()
     })
 

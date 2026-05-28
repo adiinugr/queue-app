@@ -46,7 +46,7 @@ export default function CounterPage() {
   const [error, setError] = useState<string | null>(null)
 
   const [nextQueueLoading, setNextQueueLoading] = useState(false)
-  const [completeQueueLoading, setCompleteQueueLoading] = useState(false)
+  const [pendingAction, setPendingAction] = useState<"complete" | "reject" | null>(null)
   const [recallQueueLoading, setRecallQueueLoading] = useState(false)
   const [justCalledQueueId, setJustCalledQueueId] = useState<string | null>(null)
   const [completedQueueId, setCompletedQueueId] = useState<string | null>(null)
@@ -124,17 +124,18 @@ export default function CounterPage() {
     }
   }
 
-  // Selesaikan antrian. Jika issueOperator=true (verifikator), otomatis terbitkan nomor operator
+  // Selesaikan antrian. issueOperatorTicket=true → terbitkan nomor operator (verifikator lolos)
   const completeCurrentQueue = async (issueOperatorTicket = false) => {
-    if (completeQueueLoading || !counter?.currentQueue) {
+    if (pendingAction || !counter?.currentQueue) {
       if (!counter?.currentQueue) toast.error("Tidak ada antrian aktif")
       return
     }
+    const action = issueOperatorTicket ? "complete" : "reject"
     const qNum = counter.currentQueue.number
     const qId = counter.currentQueue.id
     setCompletedQueueId(qId)
     setIssuedOperatorNumber(null)
-    setCompleteQueueLoading(true)
+    setPendingAction(action)
     setCounter((prev) => (prev ? { ...prev, currentQueue: null } : prev))
     try {
       const res = await fetch(`/api/counters/${counterId}/complete`, {
@@ -147,7 +148,9 @@ export default function CounterPage() {
 
       if (issueOperatorTicket && data.operatorQueue) {
         setIssuedOperatorNumber(data.operatorQueue.number)
-        toast.success(`Antrian ${qNum} selesai · No. Operator diterbitkan: ${data.operatorQueue.number}`)
+        toast.success(`Antrian ${qNum} lolos verifikasi · No. Operator: ${data.operatorQueue.number}`)
+      } else if (!issueOperatorTicket && isVerifikator) {
+        toast.error(`Berkas nomor ${qNum} ditolak`)
       } else {
         toast.success(`Antrian nomor ${qNum} selesai dilayani`)
       }
@@ -158,7 +161,7 @@ export default function CounterPage() {
       await fetchCounter()
       setCompletedQueueId(null)
     } finally {
-      setCompleteQueueLoading(false)
+      setPendingAction(null)
     }
   }
 
@@ -188,22 +191,23 @@ export default function CounterPage() {
 
   const handleQueueUpdate = useCallback(
     (data: QueueUpdateData) => {
-      if (data.type === "QUEUE_CALLED" && data.counter?.id === counterId) {
-        setJustCalledQueueId(data.queue.id)
+      if (data.type === "QUEUE_CALLED" && data.counter?.id === counterId && data.queue) {
+        const q = data.queue
+        setJustCalledQueueId(q.id)
         setCounter((prev) =>
           prev
             ? {
                 ...prev,
                 currentQueue: {
-                  id: data.queue.id,
-                  number: data.queue.number,
-                  queueType: (data.queue as unknown as Queue).queueType || "OPERATOR",
-                  status: data.queue.status
+                  id: q.id,
+                  number: q.number,
+                  queueType: (q as unknown as Queue).queueType || "OPERATOR",
+                  status: q.status
                 } as Queue
               }
             : prev
         )
-        setWaitingQueues((prev) => prev.filter((q) => q.id !== data.queue.id))
+        setWaitingQueues((prev) => prev.filter((item) => item.id !== q.id))
       } else if (data.type === "QUEUE_COMPLETED" && data.counter?.id === counterId) {
         setCounter((prev) => (prev ? { ...prev, currentQueue: null } : prev))
       } else if (data.type === "QUEUE_CREATED") {
@@ -453,50 +457,74 @@ export default function CounterPage() {
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      {/* Panggil ulang */}
-                      <button
-                        onClick={recallCurrentQueue}
-                        disabled={recallQueueLoading}
-                        className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-80 disabled:opacity-50"
-                        style={{
-                          background: "rgba(245,158,11,0.3)",
-                          border: "1px solid rgba(245,158,11,0.5)",
-                          fontFamily: "var(--font-jakarta)"
-                        }}
-                      >
-                        {recallQueueLoading ? (
-                          <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                          </svg>
-                        )}
-                        Panggil Ulang
-                      </button>
-
-                      {/* Selesai — untuk verifikator selalu terbitkan nomor operator */}
-                      <button
-                        onClick={() => completeCurrentQueue(isVerifikator)}
-                        disabled={completeQueueLoading}
-                        className={`px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-80 disabled:opacity-50 ${themeBg}`}
-                        style={{ fontFamily: "var(--font-jakarta)" }}
-                      >
-                        {completeQueueLoading ? (
-                          <span className="flex items-center justify-center gap-2">
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        {/* Panggil ulang */}
+                        <button
+                          onClick={recallCurrentQueue}
+                          disabled={recallQueueLoading || !!pendingAction}
+                          className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-80 disabled:opacity-50"
+                          style={{
+                            background: "rgba(245,158,11,0.3)",
+                            border: "1px solid rgba(245,158,11,0.5)",
+                            fontFamily: "var(--font-jakarta)"
+                          }}
+                        >
+                          {recallQueueLoading ? (
                             <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                             </svg>
-                            Memproses...
-                          </span>
-                        ) : (
-                          "Selesai"
-                        )}
-                      </button>
+                          ) : (
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                            </svg>
+                          )}
+                          Panggil Ulang
+                        </button>
+
+                        {/* Selesai / Lolos Verifikasi */}
+                        <button
+                          onClick={() => completeCurrentQueue(isVerifikator)}
+                          disabled={!!pendingAction}
+                          className={`px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-80 disabled:opacity-50 ${themeBg}`}
+                          style={{ fontFamily: "var(--font-jakarta)" }}
+                        >
+                          {pendingAction === "complete" ? (
+                            <span className="flex items-center justify-center gap-2">
+                              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                              Memproses...
+                            </span>
+                          ) : isVerifikator ? "Lolos Verifikasi ✓" : "Selesai"}
+                        </button>
+                      </div>
+
+                      {/* Tolak Berkas — hanya untuk verifikator */}
+                      {isVerifikator && (
+                        <button
+                          onClick={() => completeCurrentQueue(false)}
+                          disabled={!!pendingAction}
+                          className="w-full px-4 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-80 disabled:opacity-50"
+                          style={{
+                            background: "rgba(239,68,68,0.25)",
+                            border: "1px solid rgba(239,68,68,0.5)",
+                            fontFamily: "var(--font-jakarta)"
+                          }}
+                        >
+                          {pendingAction === "reject" ? (
+                            <span className="flex items-center justify-center gap-2">
+                              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                              </svg>
+                              Memproses...
+                            </span>
+                          ) : "Tolak Berkas ✗"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ) : (

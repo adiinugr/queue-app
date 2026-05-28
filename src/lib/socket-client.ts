@@ -14,7 +14,7 @@ export enum SOCKET_EVENTS {
 // Types for socket events
 export interface QueueUpdateData {
   type: string
-  queue: {
+  queue?: {
     id: string
     number: number
     queueType?: "OPERATOR" | "VERIFIKATOR"

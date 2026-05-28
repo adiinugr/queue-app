@@ -79,13 +79,25 @@ export default function AdminPage() {
     }
   }, [])
 
-  useEffect(() => { fetchAll() }, [fetchAll])
+  useEffect(() => {
+    fetchAll()
+    const interval = setInterval(fetchAll, 5000)
+    return () => clearInterval(interval)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleQueueUpdate = useCallback((data: QueueUpdateData) => {
+    if (data.type === "QUEUES_RESET") {
+      setQueues([])
+      setCounters((prev) => prev.map((c) => ({ ...c, currentQueue: null })))
+      return
+    }
+    if (!data.queue) return
+    const q = data.queue
     setQueues((prev) => {
-      const idx = prev.findIndex((q) => q.id === data.queue.id)
-      const updated = { ...data.queue, queueType: (data.queue as Queue).queueType || "OPERATOR" } as Queue
-      if (idx !== -1) return prev.map((q) => q.id === data.queue.id ? updated : q)
+      const idx = prev.findIndex((item) => item.id === q.id)
+      const updated = { ...q, queueType: (q as Queue).queueType || "OPERATOR" } as Queue
+      if (idx !== -1) return prev.map((item) => item.id === q.id ? updated : item)
       if (data.type === "QUEUE_CREATED") return [...prev, updated]
       return prev
     })
@@ -93,7 +105,7 @@ export default function AdminPage() {
       setCounters((prev) =>
         prev.map((c) =>
           c.id === data.counter!.id
-            ? { ...c, currentQueue: data.type === "QUEUE_COMPLETED" ? null : (data.queue as Queue) }
+            ? { ...c, currentQueue: data.type === "QUEUE_COMPLETED" ? null : (q as Queue) }
             : c
         )
       )
@@ -330,9 +342,9 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 pb-12">
         {/* Tabs */}
-        <div className="flex gap-1 mb-6 p-1 rounded-xl w-fit" style={{ background: "rgba(255,255,255,0.05)" }}>
+        <div className="flex gap-1 mb-6 p-1 rounded-xl overflow-x-auto" style={{ background: "rgba(255,255,255,0.05)" }}>
           {(["dashboard", "counters", "settings"] as ActiveTab[]).map((tab) => (
             <button
               key={tab}
