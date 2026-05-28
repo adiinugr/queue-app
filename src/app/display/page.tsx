@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react"
+// Web Speech API replaced with HTML5 Audio + Google TTS for cross-platform support
 import Image from "next/image"
 import LoadingSpinner from "../components/LoadingSpinner"
 import toast, { Toaster } from "react-hot-toast"
@@ -70,29 +71,10 @@ export default function DisplayPage() {
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   const countersRef = useRef<Counter[]>([])
-  const synthRef = useRef<SpeechSynthesis | null>(null)
-  const voicesRef = useRef<SpeechSynthesisVoice[]>([])
   const announcedQueueIdsRef = useRef<Set<string>>(new Set())
   const processedQueueUpdatesRef = useRef<Set<string>>(new Set())
-
-  // Load voices properly (async in Chrome)
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return
-    synthRef.current = window.speechSynthesis
-
-    const loadVoices = () => {
-      voicesRef.current = window.speechSynthesis.getVoices()
-    }
-
-    loadVoices()
-    window.speechSynthesis.onvoiceschanged = loadVoices
-
-    return () => {
-      if (window.speechSynthesis) {
-        window.speechSynthesis.onvoiceschanged = null
-      }
-    }
-  }, [])
+  const audioQueueRef = useRef<string[]>([])
+  const isPlayingRef = useRef(false)
 
   const memoizedVideoData = useMemo(() => {
     const embedUrl = getYouTubeEmbedUrl(videoUrl)
@@ -114,45 +96,31 @@ export default function DisplayPage() {
     }
   }, [videoUrl])
 
+  const playNextAudio = useCallback(() => {
+    if (isPlayingRef.current || audioQueueRef.current.length === 0) return
+    const text = audioQueueRef.current.shift()!
+    isPlayingRef.current = true
+    const audio = new Audio(`/api/tts?text=${encodeURIComponent(text)}`)
+    audio.onended = () => {
+      isPlayingRef.current = false
+      playNextAudio()
+    }
+    audio.onerror = () => {
+      isPlayingRef.current = false
+      playNextAudio()
+    }
+    audio.play().catch(() => {
+      isPlayingRef.current = false
+    })
+  }, [])
+
   const speak = useCallback(
     (text: string) => {
       if (!speechEnabled || !audioUnlocked) return
-      if (typeof window === "undefined" || !window.speechSynthesis) return
-      if (typeof SpeechSynthesisUtterance === "undefined") return
-
-      try {
-        window.speechSynthesis.cancel()
-
-        const utterance = new SpeechSynthesisUtterance(text)
-        // Selalu set bahasa Indonesia — ini kunci agar pengucapan beraksen Indonesia
-        utterance.lang = "id-ID"
-        utterance.rate = 0.85
-        utterance.pitch = 1.0
-        utterance.volume = 1.0
-
-        // Cari suara bahasa Indonesia
-        const idVoice =
-          voicesRef.current.find((v) => v.lang === "id-ID") ||
-          voicesRef.current.find((v) => v.lang.startsWith("id"))
-
-        if (idVoice) {
-          utterance.voice = idVoice
-        }
-        // Jika tidak ada suara id-ID, lang='id-ID' tetap membantu browser
-        // menggunakan phonetik Indonesia
-
-        utterance.onerror = (e) => {
-          if (e.error !== "canceled") {
-            console.error("Speech error:", e.error)
-          }
-        }
-
-        window.speechSynthesis.speak(utterance)
-      } catch (e) {
-        console.error("Failed to speak:", e)
-      }
+      audioQueueRef.current.push(text)
+      playNextAudio()
     },
-    [speechEnabled, audioUnlocked]
+    [speechEnabled, audioUnlocked, playNextAudio]
   )
 
   const getQueueUpdateKey = (type: string, queueId: string, ts: number) =>
@@ -461,16 +429,9 @@ export default function DisplayPage() {
   }
 
   const unlockAudio = () => {
-    // This click IS the user gesture — unlock browser speech permission
     const savedSpeech = localStorage.getItem("speechEnabled") !== "false"
     setSpeechEnabled(savedSpeech)
     setAudioUnlocked(true)
-    if (savedSpeech && window.speechSynthesis) {
-      // Speak a silent utterance to fully unlock
-      const u = new SpeechSynthesisUtterance(" ")
-      u.volume = 0
-      window.speechSynthesis.speak(u)
-    }
   }
 
   return (
@@ -774,15 +735,7 @@ export default function DisplayPage() {
             const next = !speechEnabled
             setSpeechEnabled(next)
             localStorage.setItem("speechEnabled", next.toString())
-            if (next) {
-              toast.success("Suara diaktifkan")
-              if (window.speechSynthesis) {
-                voicesRef.current = window.speechSynthesis.getVoices()
-              }
-            } else {
-              synthRef.current?.cancel()
-              toast.success("Suara dinonaktifkan")
-            }
+            toast.success(next ? "Suara diaktifkan" : "Suara dinonaktifkan")
           }}
           className="p-2 rounded-full text-white transition-all hover:scale-110"
           style={{
