@@ -33,7 +33,7 @@ export const GET = withErrorHandlerNoReq(async () => {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      "Cache-Control": "public, max-age=1, s-maxage=1, stale-while-revalidate=5"
+      "Cache-Control": "no-store"
     }
   })
 })
@@ -41,8 +41,14 @@ export const GET = withErrorHandlerNoReq(async () => {
 // POST /api/queues - Membuat antrean baru
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const body = await req.json().catch(() => ({}))
-  const queueType: "OPERATOR" | "VERIFIKATOR" =
-    body.queueType === "VERIFIKATOR" ? "VERIFIKATOR" : "OPERATOR"
+  const queueType: "OPERATOR" | "VERIFIKATOR" = body.queueType
+
+  if (queueType !== "OPERATOR" && queueType !== "VERIFIKATOR") {
+    return NextResponse.json(
+      { error: "queueType harus OPERATOR atau VERIFIKATOR" },
+      { status: 400 }
+    )
+  }
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)

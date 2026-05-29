@@ -60,6 +60,123 @@ interface Counter {
   isActive: boolean
 }
 
+function CounterCard({
+  counter,
+  isVerifikator,
+  activeQueue
+}: {
+  counter: Counter & { id: string }
+  isVerifikator: boolean
+  activeQueue: Queue | null
+}) {
+  const isPlaceholder =
+    counter.id.startsWith("op-placeholder-") ||
+    counter.id.startsWith("vr-placeholder-")
+  const isCalled = activeQueue?.status === "CALLED"
+  const isServing = activeQueue?.status === "SERVING"
+
+  const blue = {
+    header: isCalled
+      ? "linear-gradient(135deg, #B45309, #D97706)"
+      : isServing
+        ? "linear-gradient(135deg, #059669, #10B981)"
+        : isPlaceholder
+          ? "linear-gradient(135deg, #374151, #4B5563)"
+          : "linear-gradient(135deg, #1D4ED8, #2563EB)",
+    border: isCalled
+      ? "#F59E0B"
+      : isServing
+        ? "#10B981"
+        : isPlaceholder
+          ? "#374151"
+          : "#3B82F6",
+    bg: isCalled ? "#2A1F05" : isServing ? "#052A1A" : "#0D1F35",
+    numColor: isCalled ? "#FCD34D" : isServing ? "#6EE7B7" : "#93C5FD"
+  }
+  const teal = {
+    header: isCalled
+      ? "linear-gradient(135deg, #B45309, #D97706)"
+      : isServing
+        ? "linear-gradient(135deg, #059669, #10B981)"
+        : isPlaceholder
+          ? "linear-gradient(135deg, #374151, #4B5563)"
+          : "linear-gradient(135deg, #0F766E, #0D9488)",
+    border: isCalled
+      ? "#F59E0B"
+      : isServing
+        ? "#10B981"
+        : isPlaceholder
+          ? "#374151"
+          : "#14B8A6",
+    bg: isCalled ? "#2A1F05" : isServing ? "#052A1A" : "#0D1F35",
+    numColor: isCalled ? "#FCD34D" : isServing ? "#6EE7B7" : "#5EEAD4"
+  }
+  const theme = isVerifikator ? teal : blue
+
+  return (
+    <div
+      className={`rounded-xl overflow-hidden flex flex-col h-full transition-all duration-300 ${isCalled ? "animate-pulse-called" : ""}`}
+      style={{
+        border: `1.5px solid ${theme.border}`,
+        background: theme.bg,
+        boxShadow: isCalled
+          ? `0 0 20px rgba(245,158,11,0.3)`
+          : isServing
+            ? `0 0 20px rgba(16,185,129,0.3)`
+            : "none"
+      }}
+    >
+      <div
+        className="px-2 py-1.5 text-center"
+        style={{ background: theme.header }}
+      >
+        <span
+          className="text-xs font-bold text-white uppercase tracking-wider"
+          style={{ fontFamily: "var(--font-jakarta)" }}
+        >
+          {isVerifikator ? "V" : ""}
+          {counter.number}
+        </span>
+      </div>
+
+      <div className="flex-1 flex flex-col items-center justify-center py-2 px-1">
+        {activeQueue ? (
+          <>
+            <div
+              className="text-2xl md:text-3xl font-bold leading-none"
+              style={{
+                fontFamily: "var(--font-oswald)",
+                color: theme.numColor
+              }}
+            >
+              {String(activeQueue.number).padStart(3, "0")}
+            </div>
+            <div
+              className="text-xs mt-1 font-semibold uppercase tracking-wide"
+              style={{
+                color: isCalled ? "#F59E0B" : "#10B981",
+                fontFamily: "var(--font-jakarta)"
+              }}
+            >
+              {isCalled ? "DIPANGGIL" : "MELAYANI"}
+            </div>
+          </>
+        ) : (
+          <div
+            className="text-xl font-light"
+            style={{
+              color: isPlaceholder ? "#4B5563" : "rgba(255,255,255,0.2)",
+              fontFamily: "var(--font-oswald)"
+            }}
+          >
+            ---
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function DisplayPage() {
   const [queues, setQueues] = useState<Queue[]>([])
   const [counters, setCounters] = useState<Counter[]>([])
@@ -336,6 +453,15 @@ export default function DisplayPage() {
     countersRef.current = counters
   }, [counters])
 
+  // Sync isFullscreen saat user tekan Escape (browser keluar fullscreen tanpa tombol kita)
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange)
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange)
+  }, [])
+
   const calledQueues = queues.filter(
     (q) => q.status === "CALLED" || q.status === "SERVING"
   )
@@ -396,126 +522,6 @@ export default function DisplayPage() {
 
   if (loading) {
     return <LoadingSpinner fullScreen message="Memuat tampilan antrian..." />
-  }
-
-  const CounterCard = ({
-    counter,
-    isVerifikator
-  }: {
-    counter: (typeof operatorCounters)[0]
-    isVerifikator: boolean
-  }) => {
-    const activeQueue =
-      activeQueueByCounter[counter.id] ||
-      calledQueues.find((q) => q.counterServingId === counter.id)
-    const isPlaceholder =
-      counter.id.startsWith("op-placeholder-") ||
-      counter.id.startsWith("vr-placeholder-")
-    const isCalled = activeQueue?.status === "CALLED"
-    const isServing = activeQueue?.status === "SERVING"
-
-    const blue = {
-      header: isCalled
-        ? "linear-gradient(135deg, #B45309, #D97706)"
-        : isServing
-          ? "linear-gradient(135deg, #059669, #10B981)"
-          : isPlaceholder
-            ? "linear-gradient(135deg, #374151, #4B5563)"
-            : "linear-gradient(135deg, #1D4ED8, #2563EB)",
-      border: isCalled
-        ? "#F59E0B"
-        : isServing
-          ? "#10B981"
-          : isPlaceholder
-            ? "#374151"
-            : "#3B82F6",
-      bg: isCalled ? "#2A1F05" : isServing ? "#052A1A" : "#0D1F35",
-      numColor: isCalled ? "#FCD34D" : isServing ? "#6EE7B7" : "#93C5FD"
-    }
-    const teal = {
-      header: isCalled
-        ? "linear-gradient(135deg, #B45309, #D97706)"
-        : isServing
-          ? "linear-gradient(135deg, #059669, #10B981)"
-          : isPlaceholder
-            ? "linear-gradient(135deg, #374151, #4B5563)"
-            : "linear-gradient(135deg, #0F766E, #0D9488)",
-      border: isCalled
-        ? "#F59E0B"
-        : isServing
-          ? "#10B981"
-          : isPlaceholder
-            ? "#374151"
-            : "#14B8A6",
-      bg: isCalled ? "#2A1F05" : isServing ? "#052A1A" : "#0D1F35",
-      numColor: isCalled ? "#FCD34D" : isServing ? "#6EE7B7" : "#5EEAD4"
-    }
-    const theme = isVerifikator ? teal : blue
-
-    return (
-      <div
-        className={`rounded-xl overflow-hidden flex flex-col h-full transition-all duration-300 ${isCalled ? "animate-pulse-called" : ""}`}
-        style={{
-          border: `1.5px solid ${theme.border}`,
-          background: theme.bg,
-          boxShadow: isCalled
-            ? `0 0 20px rgba(245,158,11,0.3)`
-            : isServing
-              ? `0 0 20px rgba(16,185,129,0.3)`
-              : "none"
-        }}
-      >
-        {/* Card header */}
-        <div
-          className="px-2 py-1.5 text-center"
-          style={{ background: theme.header }}
-        >
-          <span
-            className="text-xs font-bold text-white uppercase tracking-wider"
-            style={{ fontFamily: "var(--font-jakarta)" }}
-          >
-            {isVerifikator ? "V" : ""}
-            {counter.number}
-          </span>
-        </div>
-
-        {/* Card body */}
-        <div className="flex-1 flex flex-col items-center justify-center py-2 px-1">
-          {activeQueue ? (
-            <>
-              <div
-                className="text-2xl md:text-3xl font-bold leading-none"
-                style={{
-                  fontFamily: "var(--font-oswald)",
-                  color: theme.numColor
-                }}
-              >
-                {String(activeQueue.number).padStart(3, "0")}
-              </div>
-              <div
-                className="text-xs mt-1 font-semibold uppercase tracking-wide"
-                style={{
-                  color: isCalled ? "#F59E0B" : "#10B981",
-                  fontFamily: "var(--font-jakarta)"
-                }}
-              >
-                {isCalled ? "DIPANGGIL" : "MELAYANI"}
-              </div>
-            </>
-          ) : (
-            <div
-              className="text-xl font-light"
-              style={{
-                color: isPlaceholder ? "#4B5563" : "rgba(255,255,255,0.2)",
-                fontFamily: "var(--font-oswald)"
-              }}
-            >
-              ---
-            </div>
-          )}
-        </div>
-      </div>
-    )
   }
 
   const unlockAudio = () => {
@@ -682,6 +688,7 @@ export default function DisplayPage() {
                   key={counter.id}
                   counter={counter}
                   isVerifikator={false}
+                  activeQueue={activeQueueByCounter[counter.id] || calledQueues.find((q) => q.counterServingId === counter.id) || null}
                 />
               ))}
             </div>
@@ -730,6 +737,7 @@ export default function DisplayPage() {
                   key={counter.id}
                   counter={counter}
                   isVerifikator={true}
+                  activeQueue={activeQueueByCounter[counter.id] || calledQueues.find((q) => q.counterServingId === counter.id) || null}
                 />
               ))}
             </div>

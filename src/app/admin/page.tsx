@@ -47,7 +47,6 @@ export default function AdminPage() {
 
   // Issue verifikator queue
   const [issuingQueue, setIssuingQueue] = useState(false)
-  const [lastIssuedVerifikator, setLastIssuedVerifikator] = useState<number | null>(null)
 
   // Counter form
   const [newCounterName, setNewCounterName] = useState("")
@@ -129,8 +128,8 @@ export default function AdminPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || "Gagal menambahkan antrian")
-      setLastIssuedVerifikator(data.number)
-      setQueues((prev) => [...prev, data])
+      // Tambahkan ke state hanya jika belum ada (socket event mungkin sudah menambahkan lebih cepat)
+      setQueues((prev) => prev.some((q) => q.id === data.id) ? prev : [...prev, data])
       toast.success(`Nomor antrian Verifikator ${data.number} berhasil diterbitkan`)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Gagal menambahkan antrian")
@@ -274,7 +273,10 @@ export default function AdminPage() {
   const completedOp = queues.filter((q) => q.status === "COMPLETED" && q.queueType === "OPERATOR").length
   const completedVr = queues.filter((q) => q.status === "COMPLETED" && q.queueType === "VERIFIKATOR").length
 
-  const currentSettings = { ...settings, ...editedSettings } as Settings
+  // Nomor verifikator terakhir diterbitkan — diambil dari data queues (otomatis benar setelah refresh)
+  const lastIssuedVerifikator = queues
+    .filter((q) => q.queueType === "VERIFIKATOR")
+    .reduce<number | null>((max, q) => (max === null || q.number > max ? q.number : max), null)
 
   const inputStyle = {
     background: "rgba(255,255,255,0.06)",
