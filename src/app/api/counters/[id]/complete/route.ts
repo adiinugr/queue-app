@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { withErrorHandler } from "@/app/api/middleware"
+import { Prisma } from "@prisma/client"
 
 const SOCKET_URL = process.env.SOCKET_SERVER_URL || "http://localhost:4010"
 
@@ -86,35 +87,38 @@ export const POST = withErrorHandler(
       timestamp: Date.now()
     })
 
-    // Jika verifikator meminta terbitkan nomor operator
-    // Gunakan nomor yang sama dengan nomor verifikator agar konsisten
+    // Jika verifikator menyetujui berkas: buat nomor operator dengan urutan independen.
+    // Nomor operator selalu naik (1, 2, 3…) tidak bergantung nomor verifikator,
+    // sehingga operator tidak pernah memanggil nomor mundur meski verifikator
+    // menyelesaikan berkas dalam urutan acak.
+    // Berkas yang DITOLAK (issueOperatorTicket=false) tidak membuat tiket operator sama sekali.
     let operatorQueue = null
     if (issueOperatorTicket && counter.counterType === "VERIFIKATOR") {
       const today = new Date()
       today.setHours(0, 0, 0, 0)
 
-      const verifikatorNumber = counter.currentQueue.number
+      operatorQueue = await prisma.$transaction(
+        async (tx) => {
+          // Advisory lock (key=2) memastikan hanya satu verifikator yang bisa
+          // membaca max number dan insert sekaligus — mencegah nomor duplikat/skip.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(2)`
+          const last = await tx.queue.findFirst({
+            where: { date: { gte: today }, queueType: "OPERATOR" },
+            orderBy: { number: "desc" }
+          })
+          const nextNumber = (last?.number ?? 0) + 1
+          return tx.queue.create({
+            data: { number: nextNumber, queueType: "OPERATOR", date: today }
+          })
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 10000 }
+      )
 
-      // Cek apakah nomor operator dengan angka yang sama sudah ada hari ini
-      const existing = await prisma.queue.findFirst({
-        where: { date: { gte: today }, queueType: "OPERATOR", number: verifikatorNumber }
+      await emitSocketEvent("queue-update", {
+        type: "QUEUE_CREATED",
+        queue: operatorQueue,
+        timestamp: Date.now()
       })
-
-      if (existing) {
-        // Tiket operator sudah ada (mungkin dari sesi sebelumnya); kembalikan agar verifikator
-        // tetap bisa menampilkan nomornya ke pengunjung.
-        operatorQueue = existing
-      } else {
-        operatorQueue = await prisma.queue.create({
-          data: { number: verifikatorNumber, queueType: "OPERATOR", date: today }
-        })
-
-        await emitSocketEvent("queue-update", {
-          type: "QUEUE_CREATED",
-          queue: operatorQueue,
-          timestamp: Date.now()
-        })
-      }
     }
 
     return NextResponse.json({ completedQueue: updatedQueue, operatorQueue })
