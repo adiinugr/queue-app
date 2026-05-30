@@ -41,11 +41,13 @@ export const GET = withErrorHandlerNoReq(async () => {
 // POST /api/queues - Membuat antrean baru
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const body = await req.json().catch(() => ({}))
-  const queueType: "OPERATOR" | "VERIFIKATOR" = body.queueType
+  const queueType: string = body.queueType
 
-  if (queueType !== "OPERATOR" && queueType !== "VERIFIKATOR") {
+  // Antrian Operator hanya boleh dibuat otomatis oleh sistem saat verifikator menyetujui berkas.
+  // Pembuatan manual antrian Operator dilarang untuk menjaga integritas alur antrian.
+  if (queueType !== "VERIFIKATOR") {
     return NextResponse.json(
-      { error: "queueType harus OPERATOR atau VERIFIKATOR" },
+      { error: "Hanya antrian Verifikator yang dapat dibuat manual. Antrian Operator dibuat otomatis saat verifikator menyetujui berkas." },
       { status: 400 }
     )
   }
@@ -65,7 +67,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
   if (queueCount >= settings.dailyQueueLimit) {
     return NextResponse.json(
       {
-        error: `Antrean ${queueType === "VERIFIKATOR" ? "verifikator" : "operator"} hari ini sudah penuh`
+        error: "Antrean verifikator hari ini sudah penuh"
       },
       { status: 400 }
     )

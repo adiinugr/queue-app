@@ -100,7 +100,11 @@ export const POST = withErrorHandler(
         where: { date: { gte: today }, queueType: "OPERATOR", number: verifikatorNumber }
       })
 
-      if (!existing) {
+      if (existing) {
+        // Tiket operator sudah ada (mungkin dari sesi sebelumnya); kembalikan agar verifikator
+        // tetap bisa menampilkan nomornya ke pengunjung.
+        operatorQueue = existing
+      } else {
         operatorQueue = await prisma.queue.create({
           data: { number: verifikatorNumber, queueType: "OPERATOR", date: today }
         })
