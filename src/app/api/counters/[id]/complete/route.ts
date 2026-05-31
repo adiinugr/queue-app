@@ -111,7 +111,7 @@ export const POST = withErrorHandler(
             data: { number: nextNumber, queueType: "OPERATOR", date: today }
           })
         },
-        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 10000 }
+        { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000 }
       )
 
       await emitSocketEvent("queue-update", {

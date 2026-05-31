@@ -86,7 +86,7 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
           data: { number: nextNumber, queueType, date: today }
         })
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 10000 }
+      { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000 }
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Gagal membuat antrian"

@@ -90,7 +90,7 @@ export const POST = withErrorHandler(
           })
         },
         {
-          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
           timeout: 10000
         }
       )
