@@ -47,6 +47,8 @@ export default function AdminPage() {
 
   // Issue verifikator queue
   const [issuingQueue, setIssuingQueue] = useState(false)
+  // Issue operator queue manual
+  const [issuingOperatorQueue, setIssuingOperatorQueue] = useState(false)
 
   // Counter form
   const [newCounterName, setNewCounterName] = useState("")
@@ -117,6 +119,25 @@ export default function AdminPage() {
 
   useQueueUpdates(handleQueueUpdate)
   useCounterUpdates(handleCounterUpdate)
+
+  const issueOperatorQueue = async () => {
+    setIssuingOperatorQueue(true)
+    try {
+      const res = await fetch("/api/queues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ queueType: "OPERATOR" })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Gagal menambahkan antrian")
+      setQueues((prev) => prev.some((q) => q.id === data.id) ? prev : [...prev, data])
+      toast.success(`Nomor antrian Operator ${data.number} berhasil diterbitkan`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Gagal menambahkan antrian")
+    } finally {
+      setIssuingOperatorQueue(false)
+    }
+  }
 
   const issueVerifikatorQueue = async () => {
     setIssuingQueue(true)
@@ -276,6 +297,11 @@ export default function AdminPage() {
   // Nomor verifikator terakhir diterbitkan — diambil dari data queues (otomatis benar setelah refresh)
   const lastIssuedVerifikator = queues
     .filter((q) => q.queueType === "VERIFIKATOR")
+    .reduce<number | null>((max, q) => (max === null || q.number > max ? q.number : max), null)
+
+  // Nomor operator terakhir diterbitkan
+  const lastIssuedOperator = queues
+    .filter((q) => q.queueType === "OPERATOR")
     .reduce<number | null>((max, q) => (max === null || q.number > max ? q.number : max), null)
 
   const inputStyle = {
@@ -465,6 +491,88 @@ export default function AdminPage() {
                     }}
                   >
                     {issuingQueue ? (
+                      <svg className="w-7 h-7 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                      </svg>
+                    ) : (
+                      <>
+                        <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                        <span className="text-sm">Tambah</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Issue operator queue manual */}
+            <div
+              className="rounded-2xl p-6"
+              style={{
+                background: "rgba(26,86,219,0.08)",
+                border: "1px solid rgba(59,130,246,0.3)"
+              }}
+            >
+              <div className="flex flex-col md:flex-row md:items-center gap-6">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: "#3B82F6" }} />
+                    <span
+                      className="text-xs font-bold uppercase tracking-widest"
+                      style={{ color: "#93C5FD", fontFamily: "var(--font-jakarta)" }}
+                    >
+                      Antrian Operator — Manual
+                    </span>
+                  </div>
+                  <h3
+                    className="text-lg font-bold text-white mb-1"
+                    style={{ fontFamily: "var(--font-jakarta)" }}
+                  >
+                    Tambah Nomor Antrian Operator
+                  </h3>
+                  <p
+                    className="text-sm"
+                    style={{ color: "rgba(255,255,255,0.45)", fontFamily: "var(--font-jakarta)" }}
+                  >
+                    Gunakan jika ada pengunjung yang perlu langsung masuk antrian operator tanpa melewati verifikator, atau sebagai koreksi manual.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-4 flex-shrink-0">
+                  {lastIssuedOperator && (
+                    <div className="text-center">
+                      <p
+                        className="text-xs uppercase tracking-widest mb-1"
+                        style={{ color: "rgba(255,255,255,0.4)", fontFamily: "var(--font-jakarta)" }}
+                      >
+                        Terakhir
+                      </p>
+                      <div
+                        className="text-4xl font-bold"
+                        style={{ fontFamily: "var(--font-oswald)", color: "#93C5FD" }}
+                      >
+                        {String(lastIssuedOperator).padStart(3, "0")}
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={issueOperatorQueue}
+                    disabled={issuingOperatorQueue}
+                    className="flex flex-col items-center justify-center gap-1 w-28 h-28 rounded-2xl text-white font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:hover:scale-100"
+                    style={{
+                      background: issuingOperatorQueue
+                        ? "rgba(26,86,219,0.3)"
+                        : "linear-gradient(135deg, #1D4ED8, #1A56DB)",
+                      border: "1px solid rgba(59,130,246,0.5)",
+                      boxShadow: "0 0 30px rgba(26,86,219,0.3)",
+                      fontFamily: "var(--font-jakarta)"
+                    }}
+                  >
+                    {issuingOperatorQueue ? (
                       <svg className="w-7 h-7 animate-spin" fill="none" viewBox="0 0 24 24">
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />

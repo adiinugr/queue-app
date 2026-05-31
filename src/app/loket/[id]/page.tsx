@@ -210,8 +210,16 @@ export default function CounterPage() {
         setWaitingQueues((prev) => prev.filter((item) => item.id !== q.id))
       } else if (data.type === "QUEUE_COMPLETED" && data.counter?.id === counterId) {
         setCounter((prev) => (prev ? { ...prev, currentQueue: null } : prev))
-      } else if (data.type === "QUEUE_CREATED") {
-        fetchQueues()
+      } else if (data.type === "QUEUE_CREATED" && data.queue) {
+        const newQ = data.queue as unknown as Queue
+        const myType = counterRef.current?.counterType
+        if (myType && newQ.queueType === myType && newQ.status === "WAITING") {
+          setWaitingQueues((prev) =>
+            prev.some((item) => item.id === newQ.id) ? prev : [...prev, newQ]
+          )
+        } else if (!myType) {
+          fetchQueues()
+        }
       } else if (data.type === "QUEUES_RESET") {
         fetchCounterRef.current()
         fetchQueues()

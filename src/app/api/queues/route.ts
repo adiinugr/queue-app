@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { prisma } from "@/lib/prisma"
 import { withErrorHandler, withErrorHandlerNoReq } from "../middleware"
+import { Prisma } from "@prisma/client"
 
 const SOCKET_URL = process.env.SOCKET_SERVER_URL || "http://localhost:4010"
 
@@ -38,16 +39,14 @@ export const GET = withErrorHandlerNoReq(async () => {
   })
 })
 
-// POST /api/queues - Membuat antrean baru
+// POST /api/queues - Membuat antrean baru (VERIFIKATOR atau OPERATOR manual dari admin)
 export const POST = withErrorHandler(async (req: NextRequest) => {
   const body = await req.json().catch(() => ({}))
   const queueType: string = body.queueType
 
-  // Antrian Operator hanya boleh dibuat otomatis oleh sistem saat verifikator menyetujui berkas.
-  // Pembuatan manual antrian Operator dilarang untuk menjaga integritas alur antrian.
-  if (queueType !== "VERIFIKATOR") {
+  if (queueType !== "VERIFIKATOR" && queueType !== "OPERATOR") {
     return NextResponse.json(
-      { error: "Hanya antrian Verifikator yang dapat dibuat manual. Antrian Operator dibuat otomatis saat verifikator menyetujui berkas." },
+      { error: "queueType harus VERIFIKATOR atau OPERATOR" },
       { status: 400 }
     )
   }
@@ -59,31 +58,40 @@ export const POST = withErrorHandler(async (req: NextRequest) => {
     where: { id: "default" }
   })) || { dailyQueueLimit: 200, startNumber: 1 }
 
-  // Hitung antrian berdasarkan tipe
-  const queueCount = await prisma.queue.count({
-    where: { date: { gte: today }, queueType }
-  })
+  // Advisory lock key berbeda per tipe agar tidak saling blokir
+  const lockKey = queueType === "OPERATOR" ? 2 : 3
 
-  if (queueCount >= settings.dailyQueueLimit) {
-    return NextResponse.json(
-      {
-        error: "Antrean verifikator hari ini sudah penuh"
+  let queue
+  try {
+    queue = await prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${lockKey})`
+
+        const queueCount = await tx.queue.count({
+          where: { date: { gte: today }, queueType }
+        })
+
+        if (queueCount >= settings.dailyQueueLimit) {
+          throw new Error(`Antrian ${queueType === "OPERATOR" ? "operator" : "verifikator"} hari ini sudah penuh`)
+        }
+
+        const last = await tx.queue.findFirst({
+          where: { date: { gte: today }, queueType },
+          orderBy: { number: "desc" }
+        })
+
+        const nextNumber = last ? last.number + 1 : settings.startNumber
+
+        return tx.queue.create({
+          data: { number: nextNumber, queueType, date: today }
+        })
       },
-      { status: 400 }
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 10000 }
     )
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Gagal membuat antrian"
+    return NextResponse.json({ error: msg }, { status: 400 })
   }
-
-  // Nomor antrean reset per tipe per hari
-  const lastQueue = await prisma.queue.findFirst({
-    where: { date: { gte: today }, queueType },
-    orderBy: { number: "desc" }
-  })
-
-  const nextNumber = lastQueue ? lastQueue.number + 1 : settings.startNumber
-
-  const queue = await prisma.queue.create({
-    data: { number: nextNumber, queueType, date: today }
-  })
 
   await emitSocketEvent("queue-update", {
     type: "QUEUE_CREATED",
