@@ -263,7 +263,7 @@ export default function CounterPage() {
       if (counterRef.current?.counterType) {
         fetchQueues(counterRef.current.counterType)
       }
-    }, 5000)
+    }, 2000)
     return () => clearInterval(interval)
   // fetchCounter and fetchQueues are stable (useCallback with empty/stable deps)
   // eslint-disable-next-line react-hooks/exhaustive-deps

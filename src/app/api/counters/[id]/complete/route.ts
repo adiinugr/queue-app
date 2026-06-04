@@ -60,38 +60,9 @@ export const POST = withErrorHandler(
       }
     })
 
-    await emitSocketEvent("queue-update", {
-      type: "QUEUE_COMPLETED",
-      queue: updatedQueue,
-      counter: {
-        id: counter.id,
-        name: counter.name,
-        number: counter.number,
-        counterType: counter.counterType,
-        isActive: counter.isActive,
-        currentQueue: null
-      },
-      timestamp: Date.now()
-    })
-
-    await emitSocketEvent("counter-update", {
-      type: "COUNTER_UPDATED",
-      counter: {
-        id: counter.id,
-        name: counter.name,
-        number: counter.number,
-        counterType: counter.counterType,
-        isActive: counter.isActive,
-        currentQueue: null
-      },
-      timestamp: Date.now()
-    })
-
-    // Jika verifikator menyetujui berkas: buat nomor operator dengan urutan independen.
-    // Nomor operator selalu naik (1, 2, 3…) tidak bergantung nomor verifikator,
-    // sehingga operator tidak pernah memanggil nomor mundur meski verifikator
-    // menyelesaikan berkas dalam urutan acak.
-    // Berkas yang DITOLAK (issueOperatorTicket=false) tidak membuat tiket operator sama sekali.
+    // Jika verifikator menyetujui berkas: buat nomor operator SEBELUM emit event,
+    // agar saat operator page menerima QUEUE_COMPLETED dan langsung fetchQueues(),
+    // tiket operator sudah ada di DB (menghindari race condition).
     let operatorQueue = null
     if (issueOperatorTicket && counter.counterType === "VERIFIKATOR") {
       const today = new Date()
@@ -99,8 +70,6 @@ export const POST = withErrorHandler(
 
       operatorQueue = await prisma.$transaction(
         async (tx) => {
-          // Advisory lock (key=2) memastikan hanya satu verifikator yang bisa
-          // membaca max number dan insert sekaligus — mencegah nomor duplikat/skip.
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(2)`
           const last = await tx.queue.findFirst({
             where: { date: { gte: today }, queueType: "OPERATOR" },
@@ -113,7 +82,31 @@ export const POST = withErrorHandler(
         },
         { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, timeout: 10000 }
       )
+    }
 
+    const counterSnapshot = {
+      id: counter.id,
+      name: counter.name,
+      number: counter.number,
+      counterType: counter.counterType,
+      isActive: counter.isActive,
+      currentQueue: null
+    }
+
+    await emitSocketEvent("queue-update", {
+      type: "QUEUE_COMPLETED",
+      queue: updatedQueue,
+      counter: counterSnapshot,
+      timestamp: Date.now()
+    })
+
+    await emitSocketEvent("counter-update", {
+      type: "COUNTER_UPDATED",
+      counter: counterSnapshot,
+      timestamp: Date.now()
+    })
+
+    if (operatorQueue) {
       await emitSocketEvent("queue-update", {
         type: "QUEUE_CREATED",
         queue: operatorQueue,
